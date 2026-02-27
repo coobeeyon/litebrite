@@ -37,6 +37,8 @@ lb ready                             # show unblocked items by priority
 | `lb dep rm <from> <to>` | Remove a dependency |
 | `lb dep list <id>` | List deps for an item |
 | `lb ready` | Show open + unblocked items sorted by priority |
+| `lb prime` | Output AI-optimized context for Claude Code hooks |
+| `lb setup claude` | Set up Claude Code integration (hooks + slash commands) |
 
 ## Item Types
 
@@ -53,6 +55,37 @@ Closed items are hidden from `lb list` by default (use `--all` to show them).
 ## IDs
 
 Items get short IDs like `lb-a3f2`. You can use any unique prefix to reference an item (e.g., `lb-a3` if unambiguous).
+
+## Claude Code Integration
+
+Litebrite integrates with [Claude Code](https://claude.com/claude-code) via hooks and slash commands. Run:
+
+```
+lb setup claude
+```
+
+This writes:
+- `.claude/settings.local.json` — SessionStart and PreCompact hooks that run `lb prime`, plus `Bash(lb:*)` permission
+- `.claude/commands/` — slash commands for common operations
+
+The `lb prime` command outputs AI-optimized context (in-progress items, ready items, session protocol, CLI reference). It runs automatically at session start and before context compaction, giving Claude persistent awareness of your tracker state.
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/lb-create` | Create a new item |
+| `/lb-ready` | Find ready work |
+| `/lb-show` | Show item details |
+| `/lb-close` | Close a completed item |
+| `/lb-update` | Update item fields |
+
+### Notes
+
+- `lb setup claude` is idempotent — safe to run repeatedly
+- It merges into existing `.claude/settings.local.json` without clobbering other config
+- `lb prime` exits silently in non-litebrite directories, so global hooks are safe
+- `.claude/settings.local.json` is typically gitignored (per-machine); each developer runs `lb setup claude` after cloning
 
 ## Storage
 
