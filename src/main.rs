@@ -394,3 +394,149 @@ fn print_tree_item(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use std::process::Command;
+
+    fn make_item(status: Status, item_type: ItemType) -> model::Item {
+        let now = Utc::now();
+        model::Item {
+            id: "lb-test".to_string(),
+            title: "test".to_string(),
+            description: None,
+            item_type,
+            status,
+            priority: 2,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    // --- should_show ---
+
+    #[test]
+    fn hides_closed_by_default() {
+        let item = make_item(Status::Closed, ItemType::Task);
+        assert!(!should_show(&item, false, None, None));
+    }
+
+    #[test]
+    fn shows_closed_with_all() {
+        let item = make_item(Status::Closed, ItemType::Task);
+        assert!(should_show(&item, true, None, None));
+    }
+
+    #[test]
+    fn filters_by_item_type() {
+        let item = make_item(Status::Open, ItemType::Epic);
+        assert!(!should_show(&item, false, Some(ItemType::Task), None));
+        assert!(should_show(&item, false, Some(ItemType::Epic), None));
+    }
+
+    #[test]
+    fn filters_by_status() {
+        let item = make_item(Status::InProgress, ItemType::Task);
+        assert!(!should_show(&item, false, None, Some(Status::Open)));
+        assert!(should_show(&item, false, None, Some(Status::InProgress)));
+    }
+
+    #[test]
+    fn status_filter_overrides_closed_hiding() {
+        let item = make_item(Status::Closed, ItemType::Task);
+        // With status filter for Closed, should show even without --all
+        assert!(should_show(&item, false, None, Some(Status::Closed)));
+    }
+
+    // --- CLI integration ---
+
+    fn lb_bin() -> std::path::PathBuf {
+        // cargo test builds the binary in the target directory
+        let mut path = std::env::current_exe().unwrap();
+        path.pop(); // remove test binary name
+        path.pop(); // remove "deps"
+        path.push("lb");
+        path
+    }
+
+    fn lb_cmd(dir: &std::path::Path) -> Command {
+        let mut cmd = Command::new(lb_bin());
+        cmd.current_dir(dir);
+        cmd
+    }
+
+    #[test]
+    fn cli_init_create_list() {
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        // init
+        let out = lb_cmd(tmp.path()).arg("init").output().unwrap();
+        assert!(out.status.success(), "init failed: {}", String::from_utf8_lossy(&out.stderr));
+
+        // create
+        let out = lb_cmd(tmp.path())
+            .args(["create", "My first task"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "create failed: {}", String::from_utf8_lossy(&out.stderr));
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.starts_with("created lb-"), "{stdout}");
+
+        // list
+        let out = lb_cmd(tmp.path()).arg("list").output().unwrap();
+        assert!(out.status.success());
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("My first task"), "{stdout}");
+    }
+
+    #[test]
+    fn cli_dep_add_and_ready() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        lb_cmd(tmp.path()).arg("init").output().unwrap();
+
+        // Create two items
+        let out = lb_cmd(tmp.path())
+            .args(["create", "blocker"])
+            .output()
+            .unwrap();
+        let blocker_id = String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .strip_prefix("created ")
+            .unwrap()
+            .to_string();
+
+        let out = lb_cmd(tmp.path())
+            .args(["create", "blocked"])
+            .output()
+            .unwrap();
+        let blocked_id = String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .strip_prefix("created ")
+            .unwrap()
+            .to_string();
+
+        // Add dep
+        let out = lb_cmd(tmp.path())
+            .args(["dep", "add", &blocker_id, "--blocks", &blocked_id])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "dep add failed: {}", String::from_utf8_lossy(&out.stderr));
+
+        // Ready should only show the blocker
+        let out = lb_cmd(tmp.path()).arg("ready").output().unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("blocker"), "{stdout}");
+        assert!(!stdout.contains("blocked"), "blocked item should not be ready: {stdout}");
+    }
+
+    #[test]
+    fn cli_unknown_command_exits_nonzero() {
+        let out = Command::new(lb_bin())
+            .arg("nonexistent")
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+    }
+}

@@ -27,3 +27,41 @@ pub fn generate_id(title: &str, existing_ids: &[&str]) -> String {
     }
     unreachable!()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn id_format() {
+        let id = generate_id("some title", &[]);
+        assert!(id.starts_with("lb-"), "id should start with lb-: {id}");
+        assert_eq!(id.len(), 7, "id should be 7 chars: {id}");
+        let suffix = &id[3..];
+        assert!(
+            suffix.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+            "suffix should be base36: {suffix}"
+        );
+    }
+
+    #[test]
+    fn id_uniqueness() {
+        let id1 = generate_id("title one", &[]);
+        let id2 = generate_id("title two", &[]);
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn id_collision_avoidance() {
+        let first = generate_id("test", &[]);
+        let second = generate_id("test", &[first.as_str()]);
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn id_empty_title() {
+        let id = generate_id("", &[]);
+        assert!(id.starts_with("lb-"));
+        assert_eq!(id.len(), 7);
+    }
+}
