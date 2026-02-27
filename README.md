@@ -1,8 +1,8 @@
 # Litebrite
 
-A lightweight, git-friendly issue tracker that lives in your project directory.
+A lightweight, git-friendly issue tracker that lives in your project directory. Heavily inspired by [beads](https://github.com/steveyegge/beads) — the data model (items, deps, parent/child, blocking), CLI design, ID prefix resolution, and Claude Code integration are all derived from beads. Litebrite is a simplified Rust reimplementation.
 
-Litebrite stores items (epics, features, tasks) as JSON in a `.litebrite/` directory alongside your code. Items have types, statuses, priorities, and support parent/child and blocking dependency relationships.
+Stores items (epics, features, tasks) as JSON in a `.litebrite/` directory alongside your code. Items have types, statuses, priorities, and support parent/child and blocking dependency relationships.
 
 ## Install
 
