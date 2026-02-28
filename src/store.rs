@@ -309,10 +309,11 @@ pub fn merge_stores(base: &Store, ours: &Store, theirs: &Store) -> Result<Store,
     for dep in &theirs.deps {
         let was_in_base = base_deps.contains(dep);
         let in_ours = our_deps.contains(dep);
-        if !was_in_base || in_ours {
-            if merged.items.contains_key(&dep.from_id) && merged.items.contains_key(&dep.to_id) {
-                merged_deps.insert(dep.clone());
-            }
+        if (!was_in_base || in_ours)
+            && merged.items.contains_key(&dep.from_id)
+            && merged.items.contains_key(&dep.to_id)
+        {
+            merged_deps.insert(dep.clone());
         }
     }
 

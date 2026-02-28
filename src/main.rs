@@ -643,7 +643,7 @@ fn setup_claude_in(base: &std::path::Path) -> Result<(), String> {
                 let has_lb_prime = arr.iter().any(|g| {
                     g.get("hooks")
                         .and_then(|h| h.as_array())
-                        .map_or(false, |hooks| {
+                        .is_some_and(|hooks| {
                             hooks.iter().any(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime"))
                         })
                 });
@@ -753,8 +753,8 @@ fn should_show(
 
 fn print_list_header() {
     println!(
-        "{:<10} {:<8} {:<14} {:<4} {}",
-        "ID", "TYPE", "STATUS", "PRI", "TITLE"
+        "{:<10} {:<8} {:<14} {:<4} TITLE",
+        "ID", "TYPE", "STATUS", "PRI"
     );
     println!("{}", "-".repeat(60));
 }
