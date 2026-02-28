@@ -1,5 +1,15 @@
 {
   "items": {
+    "lb-18or": {
+      "id": "lb-18or",
+      "title": "Fix 4 clippy warnings",
+      "description": "cargo clippy reports 4 warnings: (1) collapsible if in store.rs:285, (2) uninlined format arg in main.rs:410, (3) unnecessary map_or in main.rs:625 (use is_some_and), (4) print literal in main.rs:738. Run cargo clippy --fix or apply manually.",
+      "item_type": "task",
+      "status": "open",
+      "priority": 2,
+      "created_at": "2026-02-28T02:15:08.947148861Z",
+      "updated_at": "2026-02-28T02:15:08.947148861Z"
+    },
     "lb-4ttg": {
       "id": "lb-4ttg",
       "title": "Add push retry logic to unclaim command",
@@ -114,6 +124,11 @@
     },
     {
       "from_id": "lb-4ttg",
+      "to_id": "lb-830f",
+      "dep_type": "parent"
+    },
+    {
+      "from_id": "lb-18or",
       "to_id": "lb-830f",
       "dep_type": "parent"
     }
