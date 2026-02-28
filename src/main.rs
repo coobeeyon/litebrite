@@ -259,10 +259,7 @@ fn run(cli: Cli) -> Result<(), String> {
         Cmd::Close { id } => {
             let mut s = load()?;
             let id = store::resolve_id(&s, &id)?;
-            let item = s.items.get_mut(&id).ok_or("item not found")?;
-            item.status = Status::Closed;
-            item.claimed_by = None;
-            item.updated_at = chrono::Utc::now();
+            store::close_item(&mut s, &id)?;
             save(&s, &format!("Close item {id}"))?;
             println!("closed {id}");
             Ok(())

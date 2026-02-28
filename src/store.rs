@@ -106,6 +106,35 @@ fn delete_item_recursive(
     Ok(())
 }
 
+/// Close an item, rejecting if it has open children.
+/// Clears `claimed_by` on success.
+pub fn close_item(store: &mut Store, id: &str) -> Result<(), String> {
+    let id = resolve_id(store, id)?;
+    let children = get_children(store, &id);
+    let open_children: Vec<_> = children
+        .iter()
+        .filter_map(|cid| {
+            store
+                .items
+                .get(cid)
+                .filter(|item| item.status == Status::Open)
+                .map(|item| format!("  {} {}", cid, item.title))
+        })
+        .collect();
+    if !open_children.is_empty() {
+        return Err(format!(
+            "cannot close '{}': has open children:\n{}",
+            id,
+            open_children.join("\n")
+        ));
+    }
+    let item = store.items.get_mut(&id).ok_or("item not found")?;
+    item.status = Status::Closed;
+    item.claimed_by = None;
+    item.updated_at = Utc::now();
+    Ok(())
+}
+
 pub fn get_children(store: &Store, id: &str) -> Vec<String> {
     store
         .deps
@@ -873,6 +902,47 @@ mod tests {
         let merged = merge_stores(&base, &ours, &theirs).unwrap();
         assert!(!merged.items.contains_key("lb-aaaa"));
         assert!(merged.items.contains_key("lb-bbbb"));
+    }
+
+    // --- Close item ---
+
+    #[test]
+    fn close_item_no_children() {
+        let (mut store, ids) = make_store(&["standalone"]);
+        close_item(&mut store, &ids[0]).unwrap();
+        assert_eq!(store.items[&ids[0]].status, Status::Closed);
+    }
+
+    #[test]
+    fn close_item_with_open_children_fails() {
+        let (mut store, ids) = make_store(&["parent", "child1", "child2"]);
+        set_parent(&mut store, &ids[1], &ids[0]).unwrap();
+        set_parent(&mut store, &ids[2], &ids[0]).unwrap();
+        let err = close_item(&mut store, &ids[0]).unwrap_err();
+        assert!(err.contains("open children"), "{err}");
+        assert!(err.contains(&ids[1]), "{err}");
+        assert!(err.contains(&ids[2]), "{err}");
+        // Parent should still be open
+        assert_eq!(store.items[&ids[0]].status, Status::Open);
+    }
+
+    #[test]
+    fn close_item_with_all_closed_children() {
+        let (mut store, ids) = make_store(&["parent", "child"]);
+        set_parent(&mut store, &ids[1], &ids[0]).unwrap();
+        // Close the child first
+        close_item(&mut store, &ids[1]).unwrap();
+        // Now closing parent should succeed
+        close_item(&mut store, &ids[0]).unwrap();
+        assert_eq!(store.items[&ids[0]].status, Status::Closed);
+    }
+
+    #[test]
+    fn close_item_clears_claimed_by() {
+        let (mut store, ids) = make_store(&["claimed"]);
+        store.items.get_mut(&ids[0]).unwrap().claimed_by = Some("alice".to_string());
+        close_item(&mut store, &ids[0]).unwrap();
+        assert!(store.items[&ids[0]].claimed_by.is_none());
     }
 
     #[test]
