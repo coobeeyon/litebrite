@@ -106,7 +106,7 @@ enum DepCmd {
 
 #[derive(Subcommand)]
 enum SetupCmd {
-    /// Set up Claude Code integration (hooks + slash commands)
+    /// Set up Claude Code integration (hooks + permissions)
     Claude,
 }
 
@@ -637,8 +637,7 @@ fn setup_claude() -> Result<(), String> {
 
 fn setup_claude_in(base: &std::path::Path) -> Result<(), String> {
     let claude_dir = base.join(".claude");
-    let commands_dir = claude_dir.join("commands");
-    std::fs::create_dir_all(&commands_dir).map_err(|e| format!("create dirs: {e}"))?;
+    std::fs::create_dir_all(&claude_dir).map_err(|e| format!("create dirs: {e}"))?;
 
     // Merge settings.local.json
     let settings_path = claude_dir.join("settings.local.json");
@@ -706,72 +705,8 @@ fn setup_claude_in(base: &std::path::Path) -> Result<(), String> {
     std::fs::write(&settings_path, settings_json).map_err(|e| e.to_string())?;
     println!("wrote .claude/settings.local.json (hooks + permissions)");
 
-    // Write slash commands
-    let commands: &[(&str, &str)] = &[
-        ("lb-create.md", SLASH_CREATE),
-        ("lb-ready.md", SLASH_READY),
-        ("lb-show.md", SLASH_SHOW),
-        ("lb-close.md", SLASH_CLOSE),
-        ("lb-update.md", SLASH_UPDATE),
-        ("lb-claim.md", SLASH_CLAIM),
-    ];
-    for (filename, content) in commands {
-        let path = commands_dir.join(filename);
-        std::fs::write(&path, content).map_err(|e| e.to_string())?;
-        println!("wrote .claude/commands/{filename}");
-    }
-
     Ok(())
 }
-
-const SLASH_CREATE: &str = r#"Create a new litebrite item.
-
-Usage: /lb-create <title> [-t epic|feature|task] [-p <priority>] [--parent <id>] [-d <description>]
-
-If the user didn't provide a title, ask for one before proceeding.
-
-Run `lb create "<title>"` with any provided flags. Show the created item ID.
-Then run `lb show <id>` to confirm what was created.
-"#;
-
-const SLASH_READY: &str = r#"Find ready work in litebrite.
-
-Run `lb ready` to show open, unblocked, unclaimed items sorted by priority.
-
-Present the results and offer to claim an item with `lb claim <id>`.
-"#;
-
-const SLASH_SHOW: &str = r#"Show litebrite item details.
-
-Usage: /lb-show <id>
-
-Run `lb show <id>` and present all fields: ID, title, type, status, priority, claimed-by, description, parent, children, blockers, and blocking relationships.
-"#;
-
-const SLASH_CLOSE: &str = r#"Close a completed litebrite item.
-
-Usage: /lb-close <id>
-
-Run `lb close <id>` to mark the item as closed (also clears any claim).
-Then run `lb ready` to show any newly unblocked items.
-"#;
-
-const SLASH_UPDATE: &str = r#"Update a litebrite item.
-
-Usage: /lb-update <id> [--title <title>] [--status open|closed] [-t <type>] [-p <priority>] [-d <description>] [--parent <id>]
-
-Run `lb update <id>` with the provided flags.
-Then run `lb show <id>` to confirm the changes.
-"#;
-
-const SLASH_CLAIM: &str = r#"Claim a litebrite item.
-
-Usage: /lb-claim <id>
-
-Run `lb claim <id>` to claim the item (fetches from remote, sets claimed_by, pushes).
-First push wins — if someone else already claimed it, the command will fail.
-Then run `lb show <id>` to confirm.
-"#;
 
 fn should_show(
     item: &model::Item,
@@ -1114,23 +1049,9 @@ mod tests {
         );
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("settings.local.json"), "{stdout}");
-        assert!(stdout.contains("lb-create.md"), "{stdout}");
-        assert!(stdout.contains("lb-ready.md"), "{stdout}");
-        assert!(stdout.contains("lb-show.md"), "{stdout}");
-        assert!(stdout.contains("lb-close.md"), "{stdout}");
-        assert!(stdout.contains("lb-update.md"), "{stdout}");
-        assert!(stdout.contains("lb-claim.md"), "{stdout}");
 
-        // Verify files exist
+        // Verify settings file exists and has correct content
         assert!(tmp.path().join(".claude/settings.local.json").exists());
-        assert!(tmp.path().join(".claude/commands/lb-create.md").exists());
-        assert!(tmp.path().join(".claude/commands/lb-ready.md").exists());
-        assert!(tmp.path().join(".claude/commands/lb-show.md").exists());
-        assert!(tmp.path().join(".claude/commands/lb-close.md").exists());
-        assert!(tmp.path().join(".claude/commands/lb-update.md").exists());
-        assert!(tmp.path().join(".claude/commands/lb-claim.md").exists());
-
-        // Verify settings content
         let settings: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(tmp.path().join(".claude/settings.local.json")).unwrap(),
         )

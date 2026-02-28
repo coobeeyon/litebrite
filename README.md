@@ -44,7 +44,7 @@ lb sync                              # sync local changes with remote
 | `lb unclaim <id>` | **Yes** | Release a claim (fetch + clear claimed_by + push) |
 | `lb sync` | **Yes** | Sync with remote (fetch + three-way merge + push) |
 | `lb prime` | No | Output AI-optimized context for Claude Code hooks |
-| `lb setup claude` | No | Set up Claude Code integration (hooks + slash commands) |
+| `lb setup claude` | No | Set up Claude Code integration (hooks + permissions) |
 
 Local-only commands are fast — no network. Use `lb sync` to share changes. `lb claim`/`lb unclaim` always sync because atomicity matters.
 
@@ -80,28 +80,17 @@ All data lives in `store.json` on an orphan `litebrite` git branch — nothing i
 
 ## Claude Code Integration
 
-Litebrite integrates with [Claude Code](https://claude.com/claude-code) via hooks and slash commands. Run:
+Litebrite integrates with [Claude Code](https://claude.com/claude-code) via hooks. Run:
 
 ```
 lb setup claude
 ```
 
-This writes:
-- `.claude/settings.local.json` — SessionStart and PreCompact hooks that run `lb prime`, plus `Bash(lb:*)` permission
-- `.claude/commands/` — slash commands for common operations
+This writes `.claude/settings.local.json` with:
+- SessionStart and PreCompact hooks that run `lb prime`
+- `Bash(lb:*)` permission so Claude can run `lb` commands
 
-The `lb prime` command outputs AI-optimized context (claimed items, ready items, session protocol, CLI reference). It runs automatically at session start and before context compaction, giving Claude persistent awareness of your tracker state.
-
-### Slash Commands
-
-| Command | Description |
-|---------|-------------|
-| `/lb-create` | Create a new item |
-| `/lb-ready` | Find ready work |
-| `/lb-show` | Show item details |
-| `/lb-close` | Close a completed item |
-| `/lb-update` | Update item fields |
-| `/lb-claim` | Claim an item |
+The `lb prime` command outputs AI-optimized context (claimed items, ready items, session protocol, CLI reference). It runs automatically at session start and before context compaction, giving Claude persistent awareness of your tracker state. The CLI reference in the prime output is sufficient for Claude to operate all `lb` commands — no slash commands needed.
 
 ### Notes
 
