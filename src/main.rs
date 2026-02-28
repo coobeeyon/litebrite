@@ -606,20 +606,33 @@ fn setup_claude_in(base: &std::path::Path) -> Result<(), String> {
         settings["permissions"]["allow"] = serde_json::json!(lb_perms);
     }
 
-    // Ensure hooks
+    // Ensure hooks (new matcher-based format)
+    let matcher_group = |cmd: &str| serde_json::json!({
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": cmd }]
+    });
+    let session_group = matcher_group("lb prime");
+    let compact_group = matcher_group("lb prime");
     let hooks = serde_json::json!({
-        "SessionStart": [{ "type": "command", "command": "lb prime" }],
-        "PreCompact": [{ "type": "command", "command": "lb prime" }]
+        "SessionStart": [session_group],
+        "PreCompact": [compact_group]
     });
     if let Some(existing_hooks) = settings.get_mut("hooks") {
         for key in ["SessionStart", "PreCompact"] {
-            let hook_entry = serde_json::json!({ "type": "command", "command": "lb prime" });
+            let group = matcher_group("lb prime");
             if let Some(arr) = existing_hooks.get_mut(key).and_then(|v| v.as_array_mut()) {
-                if !arr.iter().any(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime")) {
-                    arr.push(hook_entry);
+                let has_lb_prime = arr.iter().any(|g| {
+                    g.get("hooks")
+                        .and_then(|h| h.as_array())
+                        .map_or(false, |hooks| {
+                            hooks.iter().any(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime"))
+                        })
+                });
+                if !has_lb_prime {
+                    arr.push(group);
                 }
             } else {
-                existing_hooks[key] = serde_json::json!([hook_entry]);
+                existing_hooks[key] = serde_json::json!([group]);
             }
         }
     } else {
@@ -1071,7 +1084,13 @@ mod tests {
 
         let session_hooks = settings["hooks"]["SessionStart"].as_array().unwrap();
         let prime_count = session_hooks.iter()
-            .filter(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime"))
+            .filter(|g| {
+                g.get("hooks")
+                    .and_then(|h| h.as_array())
+                    .map_or(false, |hooks| {
+                        hooks.iter().any(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime"))
+                    })
+            })
             .count();
         assert_eq!(prime_count, 1, "hook duplicated: {session_hooks:?}");
     }
