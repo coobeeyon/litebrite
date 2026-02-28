@@ -77,8 +77,9 @@
       "item_type": "task",
       "status": "open",
       "priority": 1,
+      "claimed_by": "Mike Daum",
       "created_at": "2026-02-28T02:15:08.887909342Z",
-      "updated_at": "2026-02-28T02:15:08.887909342Z"
+      "updated_at": "2026-02-28T02:36:18.258338143Z"
     },
     "lb-lztk": {
       "id": "lb-lztk",
