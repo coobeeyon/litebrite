@@ -756,7 +756,7 @@ fn should_show(
 
 fn print_list_header() {
     println!(
-        "{:<10} {:<8} {:<12} {:<4} {}",
+        "{:<10} {:<8} {:<14} {:<4} {}",
         "ID", "TYPE", "STATUS", "PRI", "TITLE"
     );
     println!("{}", "-".repeat(60));
@@ -769,8 +769,8 @@ fn print_list_row(item: &model::Item) {
         item.status.to_string()
     };
     println!(
-        "{:<10} {:<8} {:<14} P{}   {}",
-        item.id, item.item_type, status_str, item.priority, item.title
+        "{:<10} {:<8} {:<14} {:<4} {}",
+        item.id, item.item_type, status_str, format!("P{}", item.priority), item.title
     );
 }
 
