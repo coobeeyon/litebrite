@@ -84,11 +84,10 @@
       "title": "Warn or cascade on delete of item with children",
       "description": "delete_item (store.rs:82) removes the item and its deps but silently orphans any children (their parent dep is removed since it references the deleted item, making them new roots). Consider either: (a) recursively deleting children, (b) printing a warning listing orphaned children, or (c) requiring --force if children exist.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 2,
-      "claimed_by": "Mike Daum",
       "created_at": "2026-02-28T02:15:08.906267250Z",
-      "updated_at": "2026-02-28T13:45:32.196386929Z"
+      "updated_at": "2026-02-28T13:46:56.332836077Z"
     }
   },
   "deps": [
