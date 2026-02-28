@@ -55,11 +55,10 @@
       "title": "Fix tree view hiding children of filtered-out roots",
       "description": "In --tree mode (main.rs print_tree_item), if a root item is filtered out by should_show (e.g. it's closed and --all isn't set), all its descendants are invisible even if they individually pass the filter. The tree walk starts at roots and skips filtered ones entirely. Fix: when a root is filtered out, still walk its children to see if any pass the filter, promoting them to display as pseudo-roots.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 1,
-      "claimed_by": "Mike Daum",
       "created_at": "2026-02-28T02:15:08.881466091Z",
-      "updated_at": "2026-02-28T02:31:05.526963539Z"
+      "updated_at": "2026-02-28T02:34:53.603209167Z"
     },
     "lb-hhip": {
       "id": "lb-hhip",
