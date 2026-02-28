@@ -75,11 +75,10 @@
       "title": "Add cycle detection for blocking dependencies",
       "description": "add_blocking_dep (store.rs:127) checks for self-blocks but not transitive cycles. Creating A blocks B, B blocks C, C blocks A is allowed and causes all three to be permanently blocked by ready_items. Add reachability check before inserting a new blocking dep to prevent cycles.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 1,
-      "claimed_by": "Mike Daum",
       "created_at": "2026-02-28T02:15:08.887909342Z",
-      "updated_at": "2026-02-28T02:36:18.258338143Z"
+      "updated_at": "2026-02-28T02:37:19.001848997Z"
     },
     "lb-lztk": {
       "id": "lb-lztk",
