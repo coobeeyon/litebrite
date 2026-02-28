@@ -5,11 +5,10 @@
       "title": "Fix 4 clippy warnings",
       "description": "cargo clippy reports 4 warnings: (1) collapsible if in store.rs:285, (2) uninlined format arg in main.rs:410, (3) unnecessary map_or in main.rs:625 (use is_some_and), (4) print literal in main.rs:738. Run cargo clippy --fix or apply manually.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 2,
-      "claimed_by": "Mike Daum",
       "created_at": "2026-02-28T02:15:08.947148861Z",
-      "updated_at": "2026-02-28T02:37:32.334415980Z"
+      "updated_at": "2026-02-28T13:43:27.243730270Z"
     },
     "lb-4ttg": {
       "id": "lb-4ttg",
