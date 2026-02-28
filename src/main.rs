@@ -917,6 +917,15 @@ mod tests {
         path.pop(); // remove test binary name
         path.pop(); // remove "deps"
         path.push("lb");
+        if !path.exists() {
+            // Newer Rust versions may not place the binary in target/debug/;
+            // fall back to building it explicitly.
+            let status = Command::new("cargo")
+                .args(["build", "--bin", "lb"])
+                .status()
+                .expect("failed to run cargo build");
+            assert!(status.success(), "cargo build --bin lb failed");
+        }
         path
     }
 
