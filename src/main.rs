@@ -1,3 +1,4 @@
+mod git;
 mod id;
 mod model;
 mod store;
@@ -14,7 +15,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Create .litebrite/ in the current directory
+    /// Initialize litebrite in this git repo
     Init,
     /// Create a new item
     Create {
@@ -68,8 +69,14 @@ enum Cmd {
         #[command(subcommand)]
         action: DepCmd,
     },
-    /// Show open + unblocked items sorted by priority
+    /// Show open + unblocked + unclaimed items sorted by priority
     Ready,
+    /// Claim an item (fetch + set claimed_by + push)
+    Claim { id: String },
+    /// Unclaim an item (fetch + clear claimed_by + push)
+    Unclaim { id: String },
+    /// Sync local changes with remote (fetch + merge + push)
+    Sync,
     /// Output AI-optimized context for Claude Code hooks
     Prime,
     /// Set up integrations
@@ -110,8 +117,9 @@ fn main() {
 fn run(cli: Cli) -> Result<(), String> {
     match cli.command {
         Cmd::Init => {
-            store::init().map_err(|e| e.to_string())?;
-            println!("initialized .litebrite/");
+            let empty_store = store::to_json(&model::Store::default())?;
+            git::init_branch(&empty_store)?;
+            println!("initialized litebrite branch");
             Ok(())
         }
         Cmd::Create {
@@ -123,7 +131,7 @@ fn run(cli: Cli) -> Result<(), String> {
         } => {
             let mut s = load()?;
             let id = store::create_item(&mut s, title, item_type, priority, description, parent)?;
-            save(&s)?;
+            save(&s, &format!("Create item {id}"))?;
             println!("created {id}");
             Ok(())
         }
@@ -136,6 +144,9 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("  Type: {}", item.item_type);
             println!("  Status: {}", item.status);
             println!("  Priority: P{}", item.priority);
+            if let Some(ref who) = item.claimed_by {
+                println!("  Claimed by: {who}");
+            }
             if let Some(ref desc) = item.description {
                 println!("  Description: {desc}");
             }
@@ -240,7 +251,7 @@ fn run(cli: Cli) -> Result<(), String> {
             if let Some(pid) = parent {
                 store::set_parent(&mut s, &id, &pid)?;
             }
-            save(&s)?;
+            save(&s, &format!("Update item {id}"))?;
             println!("updated {id}");
             Ok(())
         }
@@ -249,8 +260,9 @@ fn run(cli: Cli) -> Result<(), String> {
             let id = store::resolve_id(&s, &id)?;
             let item = s.items.get_mut(&id).ok_or("item not found")?;
             item.status = Status::Closed;
+            item.claimed_by = None;
             item.updated_at = chrono::Utc::now();
-            save(&s)?;
+            save(&s, &format!("Close item {id}"))?;
             println!("closed {id}");
             Ok(())
         }
@@ -258,7 +270,7 @@ fn run(cli: Cli) -> Result<(), String> {
             let mut s = load()?;
             let resolved = store::resolve_id(&s, &id)?;
             store::delete_item(&mut s, &resolved)?;
-            save(&s)?;
+            save(&s, &format!("Delete item {resolved}"))?;
             println!("deleted {resolved}");
             Ok(())
         }
@@ -266,16 +278,16 @@ fn run(cli: Cli) -> Result<(), String> {
             DepCmd::Add { blocker, blocks } => {
                 let mut s = load()?;
                 store::add_blocking_dep(&mut s, &blocker, &blocks)?;
-                save(&s)?;
                 let blocker = store::resolve_id(&s, &blocker)?;
                 let blocks = store::resolve_id(&s, &blocks)?;
+                save(&s, &format!("{blocker} blocks {blocks}"))?;
                 println!("{blocker} now blocks {blocks}");
                 Ok(())
             }
             DepCmd::Rm { from, to } => {
                 let mut s = load()?;
                 store::remove_dep(&mut s, &from, &to)?;
-                save(&s)?;
+                save(&s, "Remove dependency")?;
                 println!("removed dependency");
                 Ok(())
             }
@@ -335,6 +347,147 @@ fn run(cli: Cli) -> Result<(), String> {
             }
             Ok(())
         }
+        Cmd::Claim { id } => {
+            // Fetch + fast-forward + load + check + set claimed_by + save + push
+            git::fetch().map_err(|e| format!("fetch failed: {e}"))?;
+            git::fast_forward()?;
+
+            let mut s = load()?;
+            let id = store::resolve_id(&s, &id)?;
+            let item = s.items.get(&id).ok_or("item not found")?;
+
+            if item.status == Status::Closed {
+                return Err(format!("item {id} is closed"));
+            }
+            if let Some(ref who) = item.claimed_by {
+                return Err(format!("item {id} already claimed by {who}"));
+            }
+
+            let user = git::git_user_name()?;
+            let item = s.items.get_mut(&id).ok_or("item not found")?;
+            item.claimed_by = Some(user.clone());
+            item.updated_at = chrono::Utc::now();
+            save(&s, &format!("{user} claims {id}"))?;
+
+            // Push — retry once on conflict
+            match git::push() {
+                Ok(()) => {}
+                Err(_) => {
+                    // Push rejected — fetch and check if someone else claimed it
+                    git::fetch().map_err(|e| format!("fetch failed on retry: {e}"))?;
+                    let remote_json = git::read_store_from_ref("refs/remotes/origin/litebrite")?;
+                    let remote_store = store::from_json(&remote_json)?;
+                    if let Some(remote_item) = remote_store.items.get(&id) {
+                        if let Some(ref who) = remote_item.claimed_by {
+                            return Err(format!("item {id} already claimed by {who}"));
+                        }
+                    }
+
+                    // Not a claim conflict — try merge and push
+                    let base_commit = git::merge_base()?;
+                    let base_store = match base_commit {
+                        Some(ref commit) => {
+                            let json = git::read_store_from_ref(commit)?;
+                            store::from_json(&json)?
+                        }
+                        None => model::Store::default(),
+                    };
+                    let merged = store::merge_stores(&base_store, &s, &remote_store)?;
+                    let merged_json = store::to_json(&merged)?;
+
+                    let local_ref = git::local_ref()?;
+                    let remote_ref = git::remote_ref()?;
+                    git::create_merge_commit(
+                        &merged_json,
+                        &local_ref,
+                        &remote_ref,
+                        &format!("Merge: {user} claims {id}"),
+                    )?;
+                    git::push().map_err(|e| format!("push failed after merge: {e}"))?;
+                }
+            }
+
+            println!("claimed {id} ({})", user);
+            Ok(())
+        }
+        Cmd::Unclaim { id } => {
+            git::fetch().map_err(|e| format!("fetch failed: {e}"))?;
+            git::fast_forward()?;
+
+            let mut s = load()?;
+            let id = store::resolve_id(&s, &id)?;
+            let item = s.items.get(&id).ok_or("item not found")?;
+
+            if item.claimed_by.is_none() {
+                return Err(format!("item {id} is not claimed"));
+            }
+
+            let item = s.items.get_mut(&id).ok_or("item not found")?;
+            item.claimed_by = None;
+            item.updated_at = chrono::Utc::now();
+            save(&s, &format!("Unclaim {id}"))?;
+            git::push().map_err(|e| format!("push failed: {e}"))?;
+
+            println!("unclaimed {id}");
+            Ok(())
+        }
+        Cmd::Sync => {
+            if git::fetch().is_err() {
+                return Err("fetch failed — is a remote configured?".to_string());
+            }
+
+            if !git::remote_branch_exists() {
+                // Remote doesn't have the branch yet — just push
+                git::push().map_err(|e| format!("push failed: {e}"))?;
+                println!("pushed litebrite branch to remote");
+                return Ok(());
+            }
+
+            let local_json = git::read_store()?;
+            let remote_json = git::read_store_from_ref("refs/remotes/origin/litebrite")?;
+
+            let local_ref = git::local_ref()?;
+            let remote_ref = git::remote_ref()?;
+
+            if local_ref == remote_ref {
+                println!("already in sync");
+                return Ok(());
+            }
+
+            // Try fast-forward first
+            git::fast_forward()?;
+            let new_local_ref = git::local_ref()?;
+            if new_local_ref == remote_ref {
+                // We were just behind — fast-forwarded
+                println!("fast-forwarded to remote");
+                return Ok(());
+            }
+
+            // We're ahead or diverged — need to merge
+            let base_commit = git::merge_base()?;
+            let base_store = match base_commit {
+                Some(ref commit) => {
+                    let json = git::read_store_from_ref(commit)?;
+                    store::from_json(&json)?
+                }
+                None => model::Store::default(),
+            };
+
+            let local_store = store::from_json(&local_json)?;
+            let remote_store = store::from_json(&remote_json)?;
+            let merged = store::merge_stores(&base_store, &local_store, &remote_store)?;
+            let merged_json = store::to_json(&merged)?;
+
+            git::create_merge_commit(
+                &merged_json,
+                &local_ref,
+                &remote_ref,
+                "Sync litebrite stores",
+            )?;
+            git::push().map_err(|e| format!("push failed: {e}"))?;
+            println!("synced with remote");
+            Ok(())
+        }
         Cmd::Prime => {
             print_prime_context();
             Ok(())
@@ -346,38 +499,47 @@ fn run(cli: Cli) -> Result<(), String> {
 }
 
 fn load() -> Result<model::Store, String> {
-    store::load().map_err(|e| e.to_string())
+    let json = git::read_store()?;
+    store::from_json(&json)
 }
 
-fn save(s: &model::Store) -> Result<(), String> {
-    store::save(s).map_err(|e| e.to_string())
+fn save(s: &model::Store, message: &str) -> Result<(), String> {
+    let json = store::to_json(s)?;
+    git::write_store(&json, message)
 }
 
 fn print_prime_context() {
-    let s = match store::load() {
+    let s = match load() {
         Ok(s) => s,
         Err(_) => return, // no store — silent exit
     };
 
     println!("# Litebrite Tracker Active");
 
-    // In Progress section
-    let in_progress: Vec<&model::Item> = s
+    // Claimed section (replaces old In Progress)
+    let claimed: Vec<&model::Item> = s
         .items
         .values()
-        .filter(|i| i.status == Status::InProgress)
+        .filter(|i| i.claimed_by.is_some() && i.status == Status::Open)
         .collect();
-    if !in_progress.is_empty() {
-        println!("\n## In Progress");
-        for item in &in_progress {
-            println!("- {} P{} [{}] {}", item.id, item.priority, item.item_type, item.title);
+    if !claimed.is_empty() {
+        println!("\n## Claimed");
+        for item in &claimed {
+            println!(
+                "- {} P{} [{}] {} (by {})",
+                item.id,
+                item.priority,
+                item.item_type,
+                item.title,
+                item.claimed_by.as_deref().unwrap_or("?")
+            );
         }
     }
 
     // Ready section
     let ready = store::ready_items(&s);
     if !ready.is_empty() {
-        println!("\n## Ready (unblocked)");
+        println!("\n## Ready (unblocked, unclaimed)");
         for item in &ready {
             println!("- {} P{} [{}] {}", item.id, item.priority, item.item_type, item.title);
         }
@@ -386,22 +548,26 @@ fn print_prime_context() {
     println!(
         r#"
 ## Session Protocol
-1. `lb ready` — find unblocked work
+1. `lb ready` — find unblocked, unclaimed work
 2. `lb show <id>` — get full context
-3. `lb update <id> --status in_progress` — claim work
+3. `lb claim <id>` — claim work (syncs with remote)
 4. Do the work, commit code
-5. `lb close <id>` — mark complete
+5. `lb close <id>` — mark complete (clears claim)
+6. `lb sync` — push changes to remote
 
 ## CLI Quick Reference
 - `lb create <title>` — new item (-t epic/feature/task, -p <pri>, --parent <id>, -d <desc>)
 - `lb show <id>` — item details with deps and children
 - `lb list` — all open items (--all, -t <type>, -s <status>, --tree)
 - `lb update <id>` — update fields (--title, --status, -t, -p, -d, --parent)
-- `lb close <id>` — close item
+- `lb close <id>` — close item (clears claim)
 - `lb delete <id>` — delete item and deps
 - `lb dep add <id> --blocks <id>` — add blocking dep
 - `lb dep rm <from> <to>` — remove dep
-- `lb ready` — open + unblocked by priority
+- `lb ready` — open + unblocked + unclaimed by priority
+- `lb claim <id>` — claim item (fetch + push)
+- `lb unclaim <id>` — release claim (fetch + push)
+- `lb sync` — sync with remote (fetch + merge + push)
 - IDs: `lb-XXXX`, use any unique prefix"#
     );
 }
@@ -471,6 +637,7 @@ fn setup_claude_in(base: &std::path::Path) -> Result<(), String> {
         ("lb-show.md", SLASH_SHOW),
         ("lb-close.md", SLASH_CLOSE),
         ("lb-update.md", SLASH_UPDATE),
+        ("lb-claim.md", SLASH_CLAIM),
     ];
     for (filename, content) in commands {
         let path = commands_dir.join(filename);
@@ -493,32 +660,41 @@ Then run `lb show <id>` to confirm what was created.
 
 const SLASH_READY: &str = r#"Find ready work in litebrite.
 
-Run `lb ready` to show open, unblocked items sorted by priority.
+Run `lb ready` to show open, unblocked, unclaimed items sorted by priority.
 
-Present the results and offer to claim an item with `lb update <id> --status in_progress`.
+Present the results and offer to claim an item with `lb claim <id>`.
 "#;
 
 const SLASH_SHOW: &str = r#"Show litebrite item details.
 
 Usage: /lb-show <id>
 
-Run `lb show <id>` and present all fields: ID, title, type, status, priority, description, parent, children, blockers, and blocking relationships.
+Run `lb show <id>` and present all fields: ID, title, type, status, priority, claimed-by, description, parent, children, blockers, and blocking relationships.
 "#;
 
 const SLASH_CLOSE: &str = r#"Close a completed litebrite item.
 
 Usage: /lb-close <id>
 
-Run `lb close <id>` to mark the item as closed.
+Run `lb close <id>` to mark the item as closed (also clears any claim).
 Then run `lb ready` to show any newly unblocked items.
 "#;
 
 const SLASH_UPDATE: &str = r#"Update a litebrite item.
 
-Usage: /lb-update <id> [--title <title>] [--status <status>] [-t <type>] [-p <priority>] [-d <description>] [--parent <id>]
+Usage: /lb-update <id> [--title <title>] [--status open|closed] [-t <type>] [-p <priority>] [-d <description>] [--parent <id>]
 
 Run `lb update <id>` with the provided flags.
 Then run `lb show <id>` to confirm the changes.
+"#;
+
+const SLASH_CLAIM: &str = r#"Claim a litebrite item.
+
+Usage: /lb-claim <id>
+
+Run `lb claim <id>` to claim the item (fetches from remote, sets claimed_by, pushes).
+First push wins — if someone else already claimed it, the command will fail.
+Then run `lb show <id>` to confirm.
 "#;
 
 fn should_show(
@@ -552,9 +728,14 @@ fn print_list_header() {
 }
 
 fn print_list_row(item: &model::Item) {
+    let status_str = if item.claimed_by.is_some() {
+        "open (claimed)".to_string()
+    } else {
+        item.status.to_string()
+    };
     println!(
-        "{:<10} {:<8} {:<12} P{}   {}",
-        item.id, item.item_type, item.status, item.priority, item.title
+        "{:<10} {:<8} {:<14} P{}   {}",
+        item.id, item.item_type, status_str, item.priority, item.title
     );
 }
 
@@ -567,9 +748,10 @@ fn print_tree_item(
     status: Option<Status>,
 ) {
     if let Some(item) = store.items.get(id) {
+        let claimed = if item.claimed_by.is_some() { " *claimed*" } else { "" };
         let indent = "  ".repeat(depth);
         println!(
-            "{}{} [{}] P{} {} ({})",
+            "{}{} [{}] P{} {} ({}){claimed}",
             indent, item.id, item.status, item.priority, item.title, item.item_type
         );
         let children = store::get_children(store, id);
@@ -598,6 +780,7 @@ mod tests {
             item_type,
             status,
             priority: 2,
+            claimed_by: None,
             created_at: now,
             updated_at: now,
         }
@@ -626,9 +809,9 @@ mod tests {
 
     #[test]
     fn filters_by_status() {
-        let item = make_item(Status::InProgress, ItemType::Task);
-        assert!(!should_show(&item, false, None, Some(Status::Open)));
-        assert!(should_show(&item, false, None, Some(Status::InProgress)));
+        let item = make_item(Status::Open, ItemType::Task);
+        assert!(should_show(&item, false, None, Some(Status::Open)));
+        assert!(!should_show(&item, false, None, Some(Status::Closed)));
     }
 
     #[test]
@@ -641,7 +824,6 @@ mod tests {
     // --- CLI integration ---
 
     fn lb_bin() -> std::path::PathBuf {
-        // cargo test builds the binary in the target directory
         let mut path = std::env::current_exe().unwrap();
         path.pop(); // remove test binary name
         path.pop(); // remove "deps"
@@ -655,13 +837,45 @@ mod tests {
         cmd
     }
 
+    /// Set up a temp dir with a git repo for CLI tests.
+    fn setup_git_dir() -> tempfile::TempDir {
+        let tmp = tempfile::TempDir::new().unwrap();
+        Command::new("git")
+            .args(["init"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        tmp
+    }
+
     #[test]
     fn cli_init_create_list() {
-        let tmp = tempfile::TempDir::new().unwrap();
+        let tmp = setup_git_dir();
 
         // init
         let out = lb_cmd(tmp.path()).arg("init").output().unwrap();
         assert!(out.status.success(), "init failed: {}", String::from_utf8_lossy(&out.stderr));
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("initialized"), "{stdout}");
+
+        // Verify branch exists
+        let out = Command::new("git")
+            .args(["branch", "--list", "litebrite"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("litebrite"), "branch not created: {stdout}");
 
         // create
         let out = lb_cmd(tmp.path())
@@ -681,7 +895,7 @@ mod tests {
 
     #[test]
     fn cli_dep_add_and_ready() {
-        let tmp = tempfile::TempDir::new().unwrap();
+        let tmp = setup_git_dir();
         lb_cmd(tmp.path()).arg("init").output().unwrap();
 
         // Create two items
@@ -740,7 +954,7 @@ mod tests {
 
     #[test]
     fn cli_prime_with_items() {
-        let tmp = tempfile::TempDir::new().unwrap();
+        let tmp = setup_git_dir();
         lb_cmd(tmp.path()).arg("init").output().unwrap();
 
         // Create a ready item
@@ -749,28 +963,11 @@ mod tests {
             .output()
             .unwrap();
 
-        // Create an in-progress item
-        let out = lb_cmd(tmp.path())
-            .args(["create", "WIP task"])
-            .output()
-            .unwrap();
-        let wip_id = String::from_utf8_lossy(&out.stdout)
-            .trim()
-            .strip_prefix("created ")
-            .unwrap()
-            .to_string();
-        lb_cmd(tmp.path())
-            .args(["update", &wip_id, "--status", "in_progress"])
-            .output()
-            .unwrap();
-
         let out = lb_cmd(tmp.path()).arg("prime").output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("# Litebrite Tracker Active"), "{stdout}");
-        assert!(stdout.contains("## In Progress"), "{stdout}");
-        assert!(stdout.contains("WIP task"), "{stdout}");
-        assert!(stdout.contains("## Ready (unblocked)"), "{stdout}");
+        assert!(stdout.contains("## Ready"), "{stdout}");
         assert!(stdout.contains("Ready task"), "{stdout}");
         assert!(stdout.contains("## Session Protocol"), "{stdout}");
         assert!(stdout.contains("## CLI Quick Reference"), "{stdout}");
@@ -778,15 +975,15 @@ mod tests {
 
     #[test]
     fn cli_prime_empty_store() {
-        let tmp = tempfile::TempDir::new().unwrap();
+        let tmp = setup_git_dir();
         lb_cmd(tmp.path()).arg("init").output().unwrap();
 
         let out = lb_cmd(tmp.path()).arg("prime").output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("# Litebrite Tracker Active"), "{stdout}");
-        // No In Progress or Ready sections when empty
-        assert!(!stdout.contains("## In Progress"), "{stdout}");
+        // No Claimed or Ready sections when empty
+        assert!(!stdout.contains("## Claimed"), "{stdout}");
         assert!(!stdout.contains("## Ready"), "{stdout}");
         assert!(stdout.contains("## Session Protocol"), "{stdout}");
     }
@@ -808,6 +1005,7 @@ mod tests {
         assert!(stdout.contains("lb-show.md"), "{stdout}");
         assert!(stdout.contains("lb-close.md"), "{stdout}");
         assert!(stdout.contains("lb-update.md"), "{stdout}");
+        assert!(stdout.contains("lb-claim.md"), "{stdout}");
 
         // Verify files exist
         assert!(tmp.path().join(".claude/settings.local.json").exists());
@@ -816,6 +1014,7 @@ mod tests {
         assert!(tmp.path().join(".claude/commands/lb-show.md").exists());
         assert!(tmp.path().join(".claude/commands/lb-close.md").exists());
         assert!(tmp.path().join(".claude/commands/lb-update.md").exists());
+        assert!(tmp.path().join(".claude/commands/lb-claim.md").exists());
 
         // Verify settings content
         let settings: serde_json::Value = serde_json::from_str(
@@ -875,5 +1074,80 @@ mod tests {
             .filter(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime"))
             .count();
         assert_eq!(prime_count, 1, "hook duplicated: {session_hooks:?}");
+    }
+
+    // --- close clears claim ---
+
+    #[test]
+    fn cli_close_clears_claim() {
+        let tmp = setup_git_dir();
+        lb_cmd(tmp.path()).arg("init").output().unwrap();
+
+        let out = lb_cmd(tmp.path())
+            .args(["create", "claimable"])
+            .output()
+            .unwrap();
+        let id = String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .strip_prefix("created ")
+            .unwrap()
+            .to_string();
+
+        // Verify the store is on the branch
+        let out = Command::new("git")
+            .args(["show", "litebrite:store.json"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "store.json not on branch");
+
+        // Close it
+        let out = lb_cmd(tmp.path())
+            .args(["close", &id])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "close failed: {}", String::from_utf8_lossy(&out.stderr));
+
+        // Show should show closed status
+        let out = lb_cmd(tmp.path())
+            .args(["show", &id])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("closed"), "{stdout}");
+    }
+
+    // --- init already initialized ---
+
+    #[test]
+    fn cli_init_already_initialized() {
+        let tmp = setup_git_dir();
+        lb_cmd(tmp.path()).arg("init").output().unwrap();
+
+        let out = lb_cmd(tmp.path()).arg("init").output().unwrap();
+        assert!(!out.status.success(), "second init should fail");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("already initialized"), "{stderr}");
+    }
+
+    // --- git show verifies storage ---
+
+    #[test]
+    fn git_show_reflects_creates() {
+        let tmp = setup_git_dir();
+        lb_cmd(tmp.path()).arg("init").output().unwrap();
+
+        lb_cmd(tmp.path())
+            .args(["create", "git-visible task"])
+            .output()
+            .unwrap();
+
+        let out = Command::new("git")
+            .args(["show", "litebrite:store.json"])
+            .current_dir(tmp.path())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("git-visible task"), "store.json on branch should contain the item: {stdout}");
     }
 }

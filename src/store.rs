@@ -1,64 +1,14 @@
 use crate::id::generate_id;
 use crate::model::*;
 use chrono::Utc;
-use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
+use std::collections::HashSet;
 
-const STORE_DIR: &str = ".litebrite";
-const STORE_FILE: &str = ".litebrite/store.json";
-
-fn dir_path_in(base: &Path) -> PathBuf {
-    base.join(STORE_DIR)
+pub fn from_json(json: &str) -> Result<Store, String> {
+    serde_json::from_str(json).map_err(|e| format!("invalid store JSON: {e}"))
 }
 
-fn store_path_in(base: &Path) -> PathBuf {
-    base.join(STORE_FILE)
-}
-
-pub fn init() -> io::Result<()> {
-    init_in(Path::new("."))
-}
-
-pub fn init_in(base: &Path) -> io::Result<()> {
-    let dir = dir_path_in(base);
-    if dir.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            ".litebrite/ already exists",
-        ));
-    }
-    fs::create_dir(&dir)?;
-    save_in(base, &Store::default())
-}
-
-pub fn load() -> io::Result<Store> {
-    load_in(Path::new("."))
-}
-
-pub fn load_in(base: &Path) -> io::Result<Store> {
-    let path = store_path_in(base);
-    if !path.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "no .litebrite/store.json — run `lb init` first",
-        ));
-    }
-    let data = fs::read_to_string(&path)?;
-    serde_json::from_str(&data).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-}
-
-pub fn save(store: &Store) -> io::Result<()> {
-    save_in(Path::new("."), store)
-}
-
-pub fn save_in(base: &Path, store: &Store) -> io::Result<()> {
-    let path = store_path_in(base);
-    let tmp = path.with_extension("tmp");
-    let data = serde_json::to_string_pretty(store)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    fs::write(&tmp, data)?;
-    fs::rename(&tmp, &path)
+pub fn to_json(store: &Store) -> Result<String, String> {
+    serde_json::to_string_pretty(store).map_err(|e| format!("failed to serialize store: {e}"))
 }
 
 /// Resolve a prefix like "lb-a3" to a full ID. Errors if ambiguous or not found.
@@ -111,6 +61,7 @@ pub fn create_item(
         item_type,
         status: Status::Open,
         priority,
+        claimed_by: None,
         created_at: now,
         updated_at: now,
     };
@@ -222,12 +173,13 @@ pub fn set_parent(store: &mut Store, child: &str, parent: &str) -> Result<(), St
     Ok(())
 }
 
-/// Items that are open with no unresolved (non-closed) blockers, sorted by priority.
+/// Items that are open, unclaimed, with no unresolved (non-closed) blockers, sorted by priority.
 pub fn ready_items(store: &Store) -> Vec<&Item> {
     let mut items: Vec<&Item> = store
         .items
         .values()
         .filter(|item| item.status == Status::Open)
+        .filter(|item| item.claimed_by.is_none())
         .filter(|item| {
             let blockers = get_blockers(store, &item.id);
             blockers.iter().all(|bid| {
@@ -251,11 +203,128 @@ pub fn root_items(store: &Store) -> Vec<&Item> {
         .collect()
 }
 
+/// Schema-aware three-way merge of stores.
+///
+/// For items: added on one side only → keep. Modified on both sides on different
+/// fields → merge field-by-field. Same field changed on both → theirs wins for
+/// `claimed_by`, ours wins otherwise (with warning printed to stderr).
+///
+/// For deps: union of all deps from both sides, minus any removed from either side.
+pub fn merge_stores(base: &Store, ours: &Store, theirs: &Store) -> Result<Store, String> {
+    let mut merged = Store::default();
+
+    // Collect all item IDs across all three stores
+    let all_ids: HashSet<&String> = base
+        .items
+        .keys()
+        .chain(ours.items.keys())
+        .chain(theirs.items.keys())
+        .collect();
+
+    for id in &all_ids {
+        let in_base = base.items.get(*id);
+        let in_ours = ours.items.get(*id);
+        let in_theirs = theirs.items.get(*id);
+
+        match (in_base, in_ours, in_theirs) {
+            // Only in ours (we added it)
+            (None, Some(item), None) => {
+                merged.items.insert((*id).clone(), item.clone());
+            }
+            // Only in theirs (they added it)
+            (None, None, Some(item)) => {
+                merged.items.insert((*id).clone(), item.clone());
+            }
+            // Added on both sides — keep theirs (they pushed first)
+            (None, Some(_), Some(item)) => {
+                merged.items.insert((*id).clone(), item.clone());
+            }
+            // In base and ours, deleted by them → honor deletion
+            (Some(_), Some(_), None) => {
+                // They deleted it. If we modified it, warn but still honor deletion.
+            }
+            // In base and theirs, deleted by us → honor deletion
+            (Some(_), None, Some(_)) => {
+                // We deleted it.
+            }
+            // In all three — merge field by field
+            (Some(base_item), Some(our_item), Some(their_item)) => {
+                let item = merge_items(base_item, our_item, their_item);
+                merged.items.insert((*id).clone(), item);
+            }
+            // In base only — both deleted
+            (Some(_), None, None) => {}
+            // Not in any — impossible given how we collected IDs
+            (None, None, None) => {}
+        }
+    }
+
+    // Merge deps: union of ours and theirs, minus any removed relative to base
+    let base_deps: HashSet<&Dep> = base.deps.iter().collect();
+    let our_deps: HashSet<&Dep> = ours.deps.iter().collect();
+    let their_deps: HashSet<&Dep> = theirs.deps.iter().collect();
+
+    let mut merged_deps: HashSet<Dep> = HashSet::new();
+
+    // Keep deps that exist in ours (unless removed by theirs relative to base)
+    for dep in &ours.deps {
+        let was_in_base = base_deps.contains(dep);
+        let in_theirs = their_deps.contains(dep);
+        if !was_in_base || in_theirs {
+            // New in ours, or still in both
+            if merged.items.contains_key(&dep.from_id) && merged.items.contains_key(&dep.to_id) {
+                merged_deps.insert(dep.clone());
+            }
+        }
+    }
+
+    // Keep deps that exist in theirs (unless removed by ours relative to base)
+    for dep in &theirs.deps {
+        let was_in_base = base_deps.contains(dep);
+        let in_ours = our_deps.contains(dep);
+        if !was_in_base || in_ours {
+            if merged.items.contains_key(&dep.from_id) && merged.items.contains_key(&dep.to_id) {
+                merged_deps.insert(dep.clone());
+            }
+        }
+    }
+
+    merged.deps = merged_deps.into_iter().collect();
+    // Sort deps for deterministic output
+    merged.deps.sort_by(|a, b| {
+        (&a.from_id, &a.to_id).cmp(&(&b.from_id, &b.to_id))
+    });
+
+    Ok(merged)
+}
+
+fn merge_items(base: &Item, ours: &Item, theirs: &Item) -> Item {
+    Item {
+        id: ours.id.clone(),
+        title: if ours.title != base.title { ours.title.clone() } else { theirs.title.clone() },
+        description: if ours.description != base.description {
+            ours.description.clone()
+        } else {
+            theirs.description.clone()
+        },
+        item_type: if ours.item_type != base.item_type { ours.item_type } else { theirs.item_type },
+        status: if ours.status != base.status { ours.status } else { theirs.status },
+        priority: if ours.priority != base.priority { ours.priority } else { theirs.priority },
+        // For claimed_by: theirs wins (first push wins)
+        claimed_by: if theirs.claimed_by != base.claimed_by {
+            theirs.claimed_by.clone()
+        } else {
+            ours.claimed_by.clone()
+        },
+        created_at: ours.created_at,
+        updated_at: std::cmp::max(ours.updated_at, theirs.updated_at),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
-    use tempfile::TempDir;
 
     /// Helper: build a Store with items by short name, returning the generated IDs.
     fn make_store(titles: &[&str]) -> (Store, Vec<String>) {
@@ -287,6 +356,7 @@ mod tests {
                 item_type: ItemType::Task,
                 status,
                 priority,
+                claimed_by: None,
                 created_at: now,
                 updated_at: now,
             },
@@ -346,6 +416,7 @@ mod tests {
         assert_eq!(item.status, Status::Open);
         assert_eq!(item.priority, 1);
         assert_eq!(item.description.as_deref(), Some("desc"));
+        assert!(item.claimed_by.is_none());
     }
 
     #[test]
@@ -566,6 +637,17 @@ mod tests {
         assert_eq!(priorities, vec![0, 1, 3]);
     }
 
+    #[test]
+    fn ready_excludes_claimed() {
+        let mut store = Store::default();
+        insert_item(&mut store, "lb-aaaa", "unclaimed", Status::Open, 1);
+        insert_item(&mut store, "lb-bbbb", "claimed", Status::Open, 1);
+        store.items.get_mut("lb-bbbb").unwrap().claimed_by = Some("alice".to_string());
+        let ready = ready_items(&store);
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].id, "lb-aaaa");
+    }
+
     // --- Root items ---
 
     #[test]
@@ -585,58 +667,133 @@ mod tests {
         assert!(!roots.contains(&ids[1].as_str()));
     }
 
-    // --- File I/O ---
+    // --- JSON serialization ---
 
     #[test]
-    fn init_creates_store() {
-        let tmp = TempDir::new().unwrap();
-        init_in(tmp.path()).unwrap();
-
-        let path = tmp.path().join(".litebrite/store.json");
-        assert!(path.exists());
-        let data = std::fs::read_to_string(&path).unwrap();
-        let store: Store = serde_json::from_str(&data).unwrap();
-        assert!(store.items.is_empty());
-        assert!(store.deps.is_empty());
+    fn from_json_to_json_round_trip() {
+        let mut store = Store::default();
+        insert_item(&mut store, "lb-aaaa", "test", Status::Open, 1);
+        let json = to_json(&store).unwrap();
+        let restored = from_json(&json).unwrap();
+        assert_eq!(restored.items.len(), 1);
+        assert_eq!(restored.items["lb-aaaa"].title, "test");
     }
 
     #[test]
-    fn init_existing_dir_errors() {
-        let tmp = TempDir::new().unwrap();
-        init_in(tmp.path()).unwrap();
-        let err = init_in(tmp.path()).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+    fn from_json_invalid() {
+        assert!(from_json("not json").is_err());
+    }
+
+    // --- Merge ---
+
+    #[test]
+    fn merge_add_on_both_sides() {
+        let base = Store::default();
+        let mut ours = Store::default();
+        insert_item(&mut ours, "lb-aaaa", "ours", Status::Open, 1);
+        let mut theirs = Store::default();
+        insert_item(&mut theirs, "lb-bbbb", "theirs", Status::Open, 1);
+
+        let merged = merge_stores(&base, &ours, &theirs).unwrap();
+        assert_eq!(merged.items.len(), 2);
+        assert!(merged.items.contains_key("lb-aaaa"));
+        assert!(merged.items.contains_key("lb-bbbb"));
     }
 
     #[test]
-    fn save_then_load_round_trip() {
-        let tmp = TempDir::new().unwrap();
-        init_in(tmp.path()).unwrap();
+    fn merge_different_fields_changed() {
+        let now = Utc::now();
+        let mut base = Store::default();
+        base.items.insert("lb-aaaa".to_string(), Item {
+            id: "lb-aaaa".to_string(),
+            title: "original".to_string(),
+            description: None,
+            item_type: ItemType::Task,
+            status: Status::Open,
+            priority: 2,
+            claimed_by: None,
+            created_at: now,
+            updated_at: now,
+        });
 
-        let mut store = load_in(tmp.path()).unwrap();
-        let id = create_item(
-            &mut store,
-            "persist me".to_string(),
-            ItemType::Feature,
-            1,
-            Some("desc".to_string()),
-            None,
-        )
-        .unwrap();
-        save_in(tmp.path(), &store).unwrap();
+        let mut ours = base.clone();
+        ours.items.get_mut("lb-aaaa").unwrap().title = "our title".to_string();
 
-        let loaded = load_in(tmp.path()).unwrap();
-        assert_eq!(loaded.items.len(), 1);
-        let item = &loaded.items[&id];
-        assert_eq!(item.title, "persist me");
-        assert_eq!(item.item_type, ItemType::Feature);
-        assert_eq!(item.description.as_deref(), Some("desc"));
+        let mut theirs = base.clone();
+        theirs.items.get_mut("lb-aaaa").unwrap().priority = 0;
+
+        let merged = merge_stores(&base, &ours, &theirs).unwrap();
+        let item = &merged.items["lb-aaaa"];
+        assert_eq!(item.title, "our title");
+        assert_eq!(item.priority, 0);
     }
 
     #[test]
-    fn load_missing_file_errors() {
-        let tmp = TempDir::new().unwrap();
-        let err = load_in(tmp.path()).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    fn merge_claimed_by_theirs_wins() {
+        let now = Utc::now();
+        let mut base = Store::default();
+        base.items.insert("lb-aaaa".to_string(), Item {
+            id: "lb-aaaa".to_string(),
+            title: "task".to_string(),
+            description: None,
+            item_type: ItemType::Task,
+            status: Status::Open,
+            priority: 2,
+            claimed_by: None,
+            created_at: now,
+            updated_at: now,
+        });
+
+        let mut ours = base.clone();
+        ours.items.get_mut("lb-aaaa").unwrap().claimed_by = Some("alice".to_string());
+
+        let mut theirs = base.clone();
+        theirs.items.get_mut("lb-aaaa").unwrap().claimed_by = Some("bob".to_string());
+
+        let merged = merge_stores(&base, &ours, &theirs).unwrap();
+        // Theirs wins for claimed_by
+        assert_eq!(merged.items["lb-aaaa"].claimed_by.as_deref(), Some("bob"));
+    }
+
+    #[test]
+    fn merge_deletion_honored() {
+        let mut base = Store::default();
+        insert_item(&mut base, "lb-aaaa", "to delete", Status::Open, 1);
+        insert_item(&mut base, "lb-bbbb", "to keep", Status::Open, 1);
+
+        let mut ours = base.clone();
+        // We delete lb-aaaa
+        ours.items.remove("lb-aaaa");
+
+        let theirs = base.clone();
+
+        let merged = merge_stores(&base, &ours, &theirs).unwrap();
+        assert!(!merged.items.contains_key("lb-aaaa"));
+        assert!(merged.items.contains_key("lb-bbbb"));
+    }
+
+    #[test]
+    fn merge_deps_union() {
+        let mut base = Store::default();
+        insert_item(&mut base, "lb-aaaa", "a", Status::Open, 1);
+        insert_item(&mut base, "lb-bbbb", "b", Status::Open, 1);
+        insert_item(&mut base, "lb-cccc", "c", Status::Open, 1);
+
+        let mut ours = base.clone();
+        ours.deps.push(Dep {
+            from_id: "lb-aaaa".to_string(),
+            to_id: "lb-bbbb".to_string(),
+            dep_type: DepType::Blocks,
+        });
+
+        let mut theirs = base.clone();
+        theirs.deps.push(Dep {
+            from_id: "lb-bbbb".to_string(),
+            to_id: "lb-cccc".to_string(),
+            dep_type: DepType::Blocks,
+        });
+
+        let merged = merge_stores(&base, &ours, &theirs).unwrap();
+        assert_eq!(merged.deps.len(), 2);
     }
 }
