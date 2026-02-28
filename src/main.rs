@@ -425,7 +425,37 @@ fn run(cli: Cli) -> Result<(), String> {
             save(&s, &format!("Unclaim {id}"))?;
 
             if has_remote {
-                git::push().map_err(|e| format!("push failed: {e}"))?;
+                // Push — retry once on conflict
+                match git::push() {
+                    Ok(()) => {}
+                    Err(_) => {
+                        git::fetch().map_err(|e| format!("fetch failed on retry: {e}"))?;
+                        let remote_json =
+                            git::read_store_from_ref("refs/remotes/origin/litebrite")?;
+                        let remote_store = store::from_json(&remote_json)?;
+
+                        let base_commit = git::merge_base()?;
+                        let base_store = match base_commit {
+                            Some(ref commit) => {
+                                let json = git::read_store_from_ref(commit)?;
+                                store::from_json(&json)?
+                            }
+                            None => model::Store::default(),
+                        };
+                        let merged = store::merge_stores(&base_store, &s, &remote_store)?;
+                        let merged_json = store::to_json(&merged)?;
+
+                        let local_ref = git::local_ref()?;
+                        let remote_ref = git::remote_ref()?;
+                        git::create_merge_commit(
+                            &merged_json,
+                            &local_ref,
+                            &remote_ref,
+                            &format!("Merge: unclaim {id}"),
+                        )?;
+                        git::push().map_err(|e| format!("push failed after merge: {e}"))?;
+                    }
+                }
             }
 
             println!("unclaimed {id}");
