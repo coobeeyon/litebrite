@@ -611,7 +611,7 @@ fn print_prime_context() {
 2. `lb show <id>` — get full context
 3. `lb claim <id>` — claim work (syncs with remote)
 4. Do the work, commit code
-5. `lb close <id>` — mark complete (clears claim)
+5. `lb close <id>` — mark complete (ALWAYS do this after committing)
 6. `lb sync` — push changes to remote
 
 ## CLI Quick Reference
