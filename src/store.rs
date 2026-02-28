@@ -131,12 +131,27 @@ pub fn add_blocking_dep(store: &mut Store, blocker: &str, blocked: &str) -> Resu
         return Err("item cannot block itself".to_string());
     }
     let dep = Dep {
-        from_id: blocker,
-        to_id: blocked,
+        from_id: blocker.clone(),
+        to_id: blocked.clone(),
         dep_type: DepType::Blocks,
     };
     if store.deps.contains(&dep) {
         return Err("dependency already exists".to_string());
+    }
+    // Walk the blocking chain from blocker: if blocked is reachable, adding
+    // this edge would create a cycle.
+    let mut visited = std::collections::HashSet::new();
+    let mut stack = vec![blocker];
+    while let Some(cur) = stack.pop() {
+        if !visited.insert(cur.clone()) {
+            continue;
+        }
+        for b in get_blockers(store, &cur) {
+            if b == blocked {
+                return Err("cycle detected: would create circular blocking chain".to_string());
+            }
+            stack.push(b);
+        }
     }
     store.deps.push(dep);
     Ok(())
@@ -574,6 +589,23 @@ mod tests {
         add_blocking_dep(&mut store, &ids[0], &ids[1]).unwrap();
         let err = add_blocking_dep(&mut store, &ids[0], &ids[1]).unwrap_err();
         assert!(err.contains("already exists"), "{err}");
+    }
+
+    #[test]
+    fn add_blocking_dep_direct_cycle() {
+        let (mut store, ids) = make_store(&["a", "b"]);
+        add_blocking_dep(&mut store, &ids[0], &ids[1]).unwrap(); // a blocks b
+        let err = add_blocking_dep(&mut store, &ids[1], &ids[0]).unwrap_err(); // b blocks a → cycle
+        assert!(err.contains("cycle"), "{err}");
+    }
+
+    #[test]
+    fn add_blocking_dep_transitive_cycle() {
+        let (mut store, ids) = make_store(&["a", "b", "c"]);
+        add_blocking_dep(&mut store, &ids[0], &ids[1]).unwrap(); // a blocks b
+        add_blocking_dep(&mut store, &ids[1], &ids[2]).unwrap(); // b blocks c
+        let err = add_blocking_dep(&mut store, &ids[2], &ids[0]).unwrap_err(); // c blocks a → cycle
+        assert!(err.contains("cycle"), "{err}");
     }
 
     #[test]
