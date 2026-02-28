@@ -15,11 +15,10 @@
       "title": "Add push retry logic to unclaim command",
       "description": "The claim command (main.rs:372-407) has retry-on-push-conflict logic (fetch, check for claim conflict, merge, re-push), but unclaim (main.rs:429) just fails on push error. Add similar retry/merge logic for unclaim so it handles concurrent modifications gracefully.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 2,
-      "claimed_by": "Mike Daum",
       "created_at": "2026-02-28T02:15:08.932817831Z",
-      "updated_at": "2026-02-28T13:43:40.629120039Z"
+      "updated_at": "2026-02-28T13:44:15.433175245Z"
     },
     "lb-61mu": {
       "id": "lb-61mu",
