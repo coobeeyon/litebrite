@@ -543,9 +543,9 @@ fn sync_from_remote() -> Result<bool, String> {
             git::fast_forward()?;
             Ok(true)
         }
-        Err(_) => Err(
-            "litebrite branch not found on remote — run `lb sync` to push it first".to_string(),
-        ),
+        Err(_) => {
+            Err("litebrite branch not found on remote — run `lb sync` to push it first".to_string())
+        }
     }
 }
 
@@ -592,7 +592,10 @@ fn print_prime_context() {
     if !ready.is_empty() {
         println!("\n## Ready (unblocked, unclaimed)");
         for item in &ready {
-            println!("- {} P{} [{}] {}", item.id, item.priority, item.item_type, item.title);
+            println!(
+                "- {} P{} [{}] {}",
+                item.id, item.priority, item.item_type, item.title
+            );
         }
     }
 
@@ -658,10 +661,12 @@ fn setup_claude_in(base: &std::path::Path) -> Result<(), String> {
     }
 
     // Ensure hooks (new matcher-based format)
-    let matcher_group = |cmd: &str| serde_json::json!({
-        "matcher": "*",
-        "hooks": [{ "type": "command", "command": cmd }]
-    });
+    let matcher_group = |cmd: &str| {
+        serde_json::json!({
+            "matcher": "*",
+            "hooks": [{ "type": "command", "command": cmd }]
+        })
+    };
     let session_group = matcher_group("lb prime");
     let compact_group = matcher_group("lb prime");
     let hooks = serde_json::json!({
@@ -676,7 +681,9 @@ fn setup_claude_in(base: &std::path::Path) -> Result<(), String> {
                     g.get("hooks")
                         .and_then(|h| h.as_array())
                         .is_some_and(|hooks| {
-                            hooks.iter().any(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime"))
+                            hooks.iter().any(|h| {
+                                h.get("command").and_then(|c| c.as_str()) == Some("lb prime")
+                            })
                         })
                 });
                 if !has_lb_prime {
@@ -799,7 +806,11 @@ fn print_list_row(item: &model::Item) {
     };
     println!(
         "{:<10} {:<8} {:<14} {:<4} {}",
-        item.id, item.item_type, status_str, format!("P{}", item.priority), item.title
+        item.id,
+        item.item_type,
+        status_str,
+        format!("P{}", item.priority),
+        item.title
     );
 }
 
@@ -814,7 +825,11 @@ fn print_tree_item(
     if let Some(item) = store.items.get(id) {
         let visible = should_show(item, all, item_type, status);
         let child_depth = if visible {
-            let claimed = if item.claimed_by.is_some() { " *claimed*" } else { "" };
+            let claimed = if item.claimed_by.is_some() {
+                " *claimed*"
+            } else {
+                ""
+            };
             let indent = "  ".repeat(depth);
             println!(
                 "{}{} [{}] P{} {} ({}){claimed}",
@@ -930,7 +945,11 @@ mod tests {
 
         // init
         let out = lb_cmd(tmp.path()).arg("init").output().unwrap();
-        assert!(out.status.success(), "init failed: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "init failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("initialized"), "{stdout}");
 
@@ -948,7 +967,11 @@ mod tests {
             .args(["create", "My first task"])
             .output()
             .unwrap();
-        assert!(out.status.success(), "create failed: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "create failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.starts_with("created lb-"), "{stdout}");
 
@@ -990,21 +1013,25 @@ mod tests {
             .args(["dep", "add", &blocker_id, "--blocks", &blocked_id])
             .output()
             .unwrap();
-        assert!(out.status.success(), "dep add failed: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "dep add failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
 
         // Ready should only show the blocker
         let out = lb_cmd(tmp.path()).arg("ready").output().unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("blocker"), "{stdout}");
-        assert!(!stdout.contains("blocked"), "blocked item should not be ready: {stdout}");
+        assert!(
+            !stdout.contains("blocked"),
+            "blocked item should not be ready: {stdout}"
+        );
     }
 
     #[test]
     fn cli_unknown_command_exits_nonzero() {
-        let out = Command::new(lb_bin())
-            .arg("nonexistent")
-            .output()
-            .unwrap();
+        let out = Command::new(lb_bin()).arg("nonexistent").output().unwrap();
         assert!(!out.status.success());
     }
 
@@ -1015,7 +1042,10 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let out = lb_cmd(tmp.path()).arg("prime").output().unwrap();
         assert!(out.status.success(), "prime should exit 0 without store");
-        assert!(out.stdout.is_empty(), "prime should produce no output without store");
+        assert!(
+            out.stdout.is_empty(),
+            "prime should produce no output without store"
+        );
     }
 
     #[test]
@@ -1063,7 +1093,11 @@ mod tests {
             .args(["setup", "claude"])
             .output()
             .unwrap();
-        assert!(out.status.success(), "setup claude failed: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "setup claude failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("settings.local.json"), "{stdout}");
         assert!(stdout.contains("lb-create.md"), "{stdout}");
@@ -1085,11 +1119,14 @@ mod tests {
         // Verify settings content
         let settings: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(tmp.path().join(".claude/settings.local.json")).unwrap(),
-        ).unwrap();
-        assert!(settings["permissions"]["allow"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::Value::String("Bash(lb:*)".to_string())));
+        )
+        .unwrap();
+        assert!(
+            settings["permissions"]["allow"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::Value::String("Bash(lb:*)".to_string()))
+        );
         assert!(settings["hooks"]["SessionStart"].is_array());
         assert!(settings["hooks"]["PreCompact"].is_array());
     }
@@ -1102,7 +1139,8 @@ mod tests {
         std::fs::write(
             claude_dir.join("settings.local.json"),
             r#"{"permissions":{"allow":["Bash(git:*)"]}}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let out = lb_cmd(tmp.path())
             .args(["setup", "claude"])
@@ -1112,7 +1150,8 @@ mod tests {
 
         let settings: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(claude_dir.join("settings.local.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         let allow = settings["permissions"]["allow"].as_array().unwrap();
         // Should have both the existing and new permissions
         assert!(allow.contains(&serde_json::Value::String("Bash(git:*)".to_string())));
@@ -1124,24 +1163,37 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
 
         // Run twice
-        lb_cmd(tmp.path()).args(["setup", "claude"]).output().unwrap();
-        lb_cmd(tmp.path()).args(["setup", "claude"]).output().unwrap();
+        lb_cmd(tmp.path())
+            .args(["setup", "claude"])
+            .output()
+            .unwrap();
+        lb_cmd(tmp.path())
+            .args(["setup", "claude"])
+            .output()
+            .unwrap();
 
         let settings: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(tmp.path().join(".claude/settings.local.json")).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         // Should not duplicate permissions or hooks
         let allow = settings["permissions"]["allow"].as_array().unwrap();
-        let lb_count = allow.iter().filter(|v| v.as_str() == Some("Bash(lb:*)")).count();
+        let lb_count = allow
+            .iter()
+            .filter(|v| v.as_str() == Some("Bash(lb:*)"))
+            .count();
         assert_eq!(lb_count, 1, "permission duplicated: {allow:?}");
 
         let session_hooks = settings["hooks"]["SessionStart"].as_array().unwrap();
-        let prime_count = session_hooks.iter()
+        let prime_count = session_hooks
+            .iter()
             .filter(|g| {
                 g.get("hooks")
                     .and_then(|h| h.as_array())
                     .map_or(false, |hooks| {
-                        hooks.iter().any(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime"))
+                        hooks
+                            .iter()
+                            .any(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime"))
                     })
             })
             .count();
@@ -1174,17 +1226,15 @@ mod tests {
         assert!(out.status.success(), "store.json not on branch");
 
         // Close it
-        let out = lb_cmd(tmp.path())
-            .args(["close", &id])
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "close failed: {}", String::from_utf8_lossy(&out.stderr));
+        let out = lb_cmd(tmp.path()).args(["close", &id]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "close failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
 
         // Show should show closed status
-        let out = lb_cmd(tmp.path())
-            .args(["show", &id])
-            .output()
-            .unwrap();
+        let out = lb_cmd(tmp.path()).args(["show", &id]).output().unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("closed"), "{stdout}");
     }
@@ -1219,19 +1269,17 @@ mod tests {
             .unwrap()
             .to_string();
 
-        let out = lb_cmd(tmp.path())
-            .args(["claim", &id])
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "claim without remote should succeed: {}", String::from_utf8_lossy(&out.stderr));
+        let out = lb_cmd(tmp.path()).args(["claim", &id]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "claim without remote should succeed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("claimed"), "{stdout}");
 
         // Show should reflect the claim
-        let out = lb_cmd(tmp.path())
-            .args(["show", &id])
-            .output()
-            .unwrap();
+        let out = lb_cmd(tmp.path()).args(["show", &id]).output().unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("Claimed by:"), "{stdout}");
     }
@@ -1253,17 +1301,15 @@ mod tests {
 
         lb_cmd(tmp.path()).args(["claim", &id]).output().unwrap();
 
-        let out = lb_cmd(tmp.path())
-            .args(["unclaim", &id])
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "unclaim without remote should succeed: {}", String::from_utf8_lossy(&out.stderr));
+        let out = lb_cmd(tmp.path()).args(["unclaim", &id]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "unclaim without remote should succeed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
 
         // Show should no longer have a claim
-        let out = lb_cmd(tmp.path())
-            .args(["show", &id])
-            .output()
-            .unwrap();
+        let out = lb_cmd(tmp.path()).args(["show", &id]).output().unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(!stdout.contains("Claimed by:"), "{stdout}");
     }
@@ -1307,7 +1353,11 @@ mod tests {
         let (work, bare) = setup_git_dir_with_remote();
 
         let out = lb_cmd(work.path()).arg("init").output().unwrap();
-        assert!(out.status.success(), "init failed: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "init failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
 
         // Verify branch exists on remote
         let out = Command::new("git")
@@ -1316,7 +1366,10 @@ mod tests {
             .output()
             .unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("litebrite"), "init should push to remote: {stdout}");
+        assert!(
+            stdout.contains("litebrite"),
+            "init should push to remote: {stdout}"
+        );
     }
 
     #[test]
@@ -1340,7 +1393,11 @@ mod tests {
             .unwrap();
 
         let out = lb_cmd(work.path()).arg("sync").output().unwrap();
-        assert!(out.status.success(), "sync failed: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "sync failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     #[test]
@@ -1361,11 +1418,12 @@ mod tests {
         // Sync so the branch is on the remote
         lb_cmd(work.path()).arg("sync").output().unwrap();
 
-        let out = lb_cmd(work.path())
-            .args(["claim", &id])
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "claim with remote failed: {}", String::from_utf8_lossy(&out.stderr));
+        let out = lb_cmd(work.path()).args(["claim", &id]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "claim with remote failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("claimed"), "{stdout}");
     }
@@ -1388,11 +1446,12 @@ mod tests {
         lb_cmd(work.path()).arg("sync").output().unwrap();
         lb_cmd(work.path()).args(["claim", &id]).output().unwrap();
 
-        let out = lb_cmd(work.path())
-            .args(["unclaim", &id])
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "unclaim with remote failed: {}", String::from_utf8_lossy(&out.stderr));
+        let out = lb_cmd(work.path()).args(["unclaim", &id]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "unclaim with remote failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 
     // --- git show verifies storage ---
@@ -1413,6 +1472,9 @@ mod tests {
             .output()
             .unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("git-visible task"), "store.json on branch should contain the item: {stdout}");
+        assert!(
+            stdout.contains("git-visible task"),
+            "store.json on branch should contain the item: {stdout}"
+        );
     }
 }

@@ -178,9 +178,7 @@ pub fn remove_dep(store: &mut Store, from: &str, to: &str) -> Result<(), String>
     let from = resolve_id(store, from)?;
     let to = resolve_id(store, to)?;
     let before = store.deps.len();
-    store
-        .deps
-        .retain(|d| !(d.from_id == from && d.to_id == to));
+    store.deps.retain(|d| !(d.from_id == from && d.to_id == to));
     if store.deps.len() == before {
         return Err(format!("no dependency from '{from}' to '{to}'"));
     }
@@ -336,9 +334,9 @@ pub fn merge_stores(base: &Store, ours: &Store, theirs: &Store) -> Result<Store,
 
     merged.deps = merged_deps.into_iter().collect();
     // Sort deps for deterministic output
-    merged.deps.sort_by(|a, b| {
-        (&a.from_id, &a.to_id).cmp(&(&b.from_id, &b.to_id))
-    });
+    merged
+        .deps
+        .sort_by(|a, b| (&a.from_id, &a.to_id).cmp(&(&b.from_id, &b.to_id)));
 
     Ok(merged)
 }
@@ -346,15 +344,31 @@ pub fn merge_stores(base: &Store, ours: &Store, theirs: &Store) -> Result<Store,
 fn merge_items(base: &Item, ours: &Item, theirs: &Item) -> Item {
     Item {
         id: ours.id.clone(),
-        title: if ours.title != base.title { ours.title.clone() } else { theirs.title.clone() },
+        title: if ours.title != base.title {
+            ours.title.clone()
+        } else {
+            theirs.title.clone()
+        },
         description: if ours.description != base.description {
             ours.description.clone()
         } else {
             theirs.description.clone()
         },
-        item_type: if ours.item_type != base.item_type { ours.item_type } else { theirs.item_type },
-        status: if ours.status != base.status { ours.status } else { theirs.status },
-        priority: if ours.priority != base.priority { ours.priority } else { theirs.priority },
+        item_type: if ours.item_type != base.item_type {
+            ours.item_type
+        } else {
+            theirs.item_type
+        },
+        status: if ours.status != base.status {
+            ours.status
+        } else {
+            theirs.status
+        },
+        priority: if ours.priority != base.priority {
+            ours.priority
+        } else {
+            theirs.priority
+        },
         // For claimed_by: theirs wins (first push wins)
         claimed_by: if theirs.claimed_by != base.claimed_by {
             theirs.claimed_by.clone()
@@ -376,15 +390,8 @@ mod tests {
         let mut store = Store::default();
         let mut ids = Vec::new();
         for title in titles {
-            let id = create_item(
-                &mut store,
-                title.to_string(),
-                ItemType::Task,
-                2,
-                None,
-                None,
-            )
-            .unwrap();
+            let id =
+                create_item(&mut store, title.to_string(), ItemType::Task, 2, None, None).unwrap();
             ids.push(id);
         }
         (store, ids)
@@ -794,17 +801,20 @@ mod tests {
     fn merge_different_fields_changed() {
         let now = Utc::now();
         let mut base = Store::default();
-        base.items.insert("lb-aaaa".to_string(), Item {
-            id: "lb-aaaa".to_string(),
-            title: "original".to_string(),
-            description: None,
-            item_type: ItemType::Task,
-            status: Status::Open,
-            priority: 2,
-            claimed_by: None,
-            created_at: now,
-            updated_at: now,
-        });
+        base.items.insert(
+            "lb-aaaa".to_string(),
+            Item {
+                id: "lb-aaaa".to_string(),
+                title: "original".to_string(),
+                description: None,
+                item_type: ItemType::Task,
+                status: Status::Open,
+                priority: 2,
+                claimed_by: None,
+                created_at: now,
+                updated_at: now,
+            },
+        );
 
         let mut ours = base.clone();
         ours.items.get_mut("lb-aaaa").unwrap().title = "our title".to_string();
@@ -822,17 +832,20 @@ mod tests {
     fn merge_claimed_by_theirs_wins() {
         let now = Utc::now();
         let mut base = Store::default();
-        base.items.insert("lb-aaaa".to_string(), Item {
-            id: "lb-aaaa".to_string(),
-            title: "task".to_string(),
-            description: None,
-            item_type: ItemType::Task,
-            status: Status::Open,
-            priority: 2,
-            claimed_by: None,
-            created_at: now,
-            updated_at: now,
-        });
+        base.items.insert(
+            "lb-aaaa".to_string(),
+            Item {
+                id: "lb-aaaa".to_string(),
+                title: "task".to_string(),
+                description: None,
+                item_type: ItemType::Task,
+                status: Status::Open,
+                priority: 2,
+                claimed_by: None,
+                created_at: now,
+                updated_at: now,
+            },
+        );
 
         let mut ours = base.clone();
         ours.items.get_mut("lb-aaaa").unwrap().claimed_by = Some("alice".to_string());

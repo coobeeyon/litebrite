@@ -43,8 +43,7 @@ const BRANCH: &str = "litebrite";
 const STORE_FILENAME: &str = "store.json";
 
 pub fn branch_exists() -> bool {
-    run_git(&["rev-parse", "--verify", &format!("refs/heads/{BRANCH}")])
-        .is_ok()
+    run_git(&["rev-parse", "--verify", &format!("refs/heads/{BRANCH}")]).is_ok()
 }
 
 pub fn has_remote() -> bool {
@@ -52,8 +51,12 @@ pub fn has_remote() -> bool {
 }
 
 pub fn remote_branch_exists() -> bool {
-    run_git(&["rev-parse", "--verify", &format!("refs/remotes/origin/{BRANCH}")])
-        .is_ok()
+    run_git(&[
+        "rev-parse",
+        "--verify",
+        &format!("refs/remotes/origin/{BRANCH}"),
+    ])
+    .is_ok()
 }
 
 pub fn init_branch(store_json: &str) -> Result<(), String> {
@@ -64,30 +67,19 @@ pub fn init_branch(store_json: &str) -> Result<(), String> {
     // Check if remote has the branch — if so, set up tracking instead
     // Try fetching first to see if remote exists
     if fetch().is_ok() && remote_branch_exists() {
-        run_git(&[
-            "branch", BRANCH, &format!("refs/remotes/origin/{BRANCH}"),
-        ])?;
+        run_git(&["branch", BRANCH, &format!("refs/remotes/origin/{BRANCH}")])?;
         return Ok(());
     }
 
     // Create orphan branch with empty store
-    let blob_hash = run_git_stdin(
-        &["hash-object", "-w", "--stdin"],
-        store_json.as_bytes(),
-    )?;
+    let blob_hash = run_git_stdin(&["hash-object", "-w", "--stdin"], store_json.as_bytes())?;
 
     let tree_entry = format!("100644 blob {blob_hash}\t{STORE_FILENAME}\n");
     let tree_hash = run_git_stdin(&["mktree"], tree_entry.as_bytes())?;
 
-    let commit_hash = run_git(&[
-        "commit-tree", &tree_hash, "-m", "Initialize litebrite",
-    ])?;
+    let commit_hash = run_git(&["commit-tree", &tree_hash, "-m", "Initialize litebrite"])?;
 
-    run_git(&[
-        "update-ref",
-        &format!("refs/heads/{BRANCH}"),
-        &commit_hash,
-    ])?;
+    run_git(&["update-ref", &format!("refs/heads/{BRANCH}"), &commit_hash])?;
 
     // Push to remote if one is configured
     if has_remote() {
@@ -108,30 +100,22 @@ pub fn read_store_from_ref(git_ref: &str) -> Result<String, String> {
 pub fn write_store(store_json: &str, message: &str) -> Result<(), String> {
     let parent = run_git(&["rev-parse", &format!("refs/heads/{BRANCH}")])?;
 
-    let blob_hash = run_git_stdin(
-        &["hash-object", "-w", "--stdin"],
-        store_json.as_bytes(),
-    )?;
+    let blob_hash = run_git_stdin(&["hash-object", "-w", "--stdin"], store_json.as_bytes())?;
 
     let tree_entry = format!("100644 blob {blob_hash}\t{STORE_FILENAME}\n");
     let tree_hash = run_git_stdin(&["mktree"], tree_entry.as_bytes())?;
 
-    let commit_hash = run_git(&[
-        "commit-tree", &tree_hash, "-p", &parent, "-m", message,
-    ])?;
+    let commit_hash = run_git(&["commit-tree", &tree_hash, "-p", &parent, "-m", message])?;
 
-    run_git(&[
-        "update-ref",
-        &format!("refs/heads/{BRANCH}"),
-        &commit_hash,
-    ])?;
+    run_git(&["update-ref", &format!("refs/heads/{BRANCH}"), &commit_hash])?;
 
     Ok(())
 }
 
 pub fn fetch() -> Result<(), String> {
     run_git(&[
-        "fetch", "origin",
+        "fetch",
+        "origin",
         &format!("{BRANCH}:refs/remotes/origin/{BRANCH}"),
     ])?;
     Ok(())
@@ -155,16 +139,10 @@ pub fn fast_forward() -> Result<(), String> {
     }
 
     // Check if local is ancestor of remote (we're behind)
-    let is_ancestor = run_git(&[
-        "merge-base", "--is-ancestor", &local, &remote,
-    ]);
+    let is_ancestor = run_git(&["merge-base", "--is-ancestor", &local, &remote]);
     if is_ancestor.is_ok() {
         // Fast-forward local to remote
-        run_git(&[
-            "update-ref",
-            &format!("refs/heads/{BRANCH}"),
-            &remote,
-        ])?;
+        run_git(&["update-ref", &format!("refs/heads/{BRANCH}"), &remote])?;
     }
     // If remote is ancestor of local, we're ahead — nothing to do
     // If neither, we've diverged — caller handles merge
@@ -190,26 +168,23 @@ pub fn create_merge_commit(
     parent2: &str,
     message: &str,
 ) -> Result<(), String> {
-    let blob_hash = run_git_stdin(
-        &["hash-object", "-w", "--stdin"],
-        store_json.as_bytes(),
-    )?;
+    let blob_hash = run_git_stdin(&["hash-object", "-w", "--stdin"], store_json.as_bytes())?;
 
     let tree_entry = format!("100644 blob {blob_hash}\t{STORE_FILENAME}\n");
     let tree_hash = run_git_stdin(&["mktree"], tree_entry.as_bytes())?;
 
     let commit_hash = run_git(&[
-        "commit-tree", &tree_hash,
-        "-p", parent1,
-        "-p", parent2,
-        "-m", message,
+        "commit-tree",
+        &tree_hash,
+        "-p",
+        parent1,
+        "-p",
+        parent2,
+        "-m",
+        message,
     ])?;
 
-    run_git(&[
-        "update-ref",
-        &format!("refs/heads/{BRANCH}"),
-        &commit_hash,
-    ])?;
+    run_git(&["update-ref", &format!("refs/heads/{BRANCH}"), &commit_hash])?;
 
     Ok(())
 }

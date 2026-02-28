@@ -39,7 +39,9 @@ mod tests {
         assert_eq!(id.len(), 7, "id should be 7 chars: {id}");
         let suffix = &id[3..];
         assert!(
-            suffix.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+            suffix
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
             "suffix should be base36: {suffix}"
         );
     }
