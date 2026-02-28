@@ -3,11 +3,12 @@ mod id;
 mod model;
 mod store;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Shell};
 use model::{ItemType, Status};
 
 #[derive(Parser)]
-#[command(name = "lb", about = "Litebrite — lightweight issue tracker")]
+#[command(name = "lb", about = "Litebrite — lightweight issue tracker", version)]
 struct Cli {
     #[command(subcommand)]
     command: Cmd,
@@ -84,6 +85,9 @@ enum Cmd {
         #[command(subcommand)]
         action: SetupCmd,
     },
+    /// Generate shell completions
+    #[command(hide = true)]
+    Completions { shell: Shell },
 }
 
 #[derive(Subcommand)]
@@ -527,6 +531,10 @@ fn run(cli: Cli) -> Result<(), String> {
         Cmd::Setup { action } => match action {
             SetupCmd::Claude => setup_claude(),
         },
+        Cmd::Completions { shell } => {
+            generate(shell, &mut Cli::command(), "lb", &mut std::io::stdout());
+            Ok(())
+        }
     }
 }
 

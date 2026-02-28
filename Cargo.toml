@@ -2,6 +2,10 @@
 name = "litebrite"
 version = "0.1.0"
 edition = "2024"
+description = "Lightweight issue tracker stored in a git branch"
+license = "MIT"
+repository = "https://github.com/coobeeyon/litebrite"
+authors = ["Matt Daum"]
 
 [[bin]]
 name = "lb"
@@ -13,6 +17,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
+clap_complete = "4"
 
 [dev-dependencies]
 tempfile = "3"
