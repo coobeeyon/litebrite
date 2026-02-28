@@ -241,7 +241,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     item.priority = p;
                 }
                 if let Some(d) = description {
-                    item.description = Some(d);
+                    item.description = if d.is_empty() { None } else { Some(d) };
                 }
                 item.updated_at = chrono::Utc::now();
             }
