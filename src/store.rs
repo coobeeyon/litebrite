@@ -161,6 +161,18 @@ pub fn set_parent(store: &mut Store, child: &str, parent: &str) -> Result<(), St
     if child == parent {
         return Err("item cannot be its own parent".to_string());
     }
+    // Walk ancestors of the proposed parent to detect cycles
+    let mut cur = Some(parent.clone());
+    while let Some(ref id) = cur {
+        if let Some(ancestor) = get_parent(store, id) {
+            if ancestor == child {
+                return Err("cycle detected: would create circular parent chain".to_string());
+            }
+            cur = Some(ancestor);
+        } else {
+            break;
+        }
+    }
     // Remove existing parent dep
     store
         .deps
@@ -502,6 +514,23 @@ mod tests {
         let (mut store, ids) = make_store(&["lonely"]);
         let err = set_parent(&mut store, &ids[0], &ids[0]).unwrap_err();
         assert!(err.contains("own parent"), "{err}");
+    }
+
+    #[test]
+    fn set_parent_direct_cycle() {
+        let (mut store, ids) = make_store(&["a", "b"]);
+        set_parent(&mut store, &ids[1], &ids[0]).unwrap(); // b's parent = a
+        let err = set_parent(&mut store, &ids[0], &ids[1]).unwrap_err(); // a's parent = b → cycle
+        assert!(err.contains("cycle"), "{err}");
+    }
+
+    #[test]
+    fn set_parent_transitive_cycle() {
+        let (mut store, ids) = make_store(&["a", "b", "c"]);
+        set_parent(&mut store, &ids[1], &ids[0]).unwrap(); // b's parent = a
+        set_parent(&mut store, &ids[2], &ids[1]).unwrap(); // c's parent = b
+        let err = set_parent(&mut store, &ids[0], &ids[2]).unwrap_err(); // a's parent = c → cycle
+        assert!(err.contains("cycle"), "{err}");
     }
 
     #[test]
