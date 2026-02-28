@@ -79,13 +79,30 @@ pub fn create_item(
     Ok(id)
 }
 
-pub fn delete_item(store: &mut Store, id: &str) -> Result<(), String> {
+/// Delete an item and recursively delete all its children.
+/// Returns the list of deleted item IDs (parent first, then children).
+pub fn delete_item(store: &mut Store, id: &str) -> Result<Vec<String>, String> {
     let id = resolve_id(store, id)?;
+    let mut deleted = Vec::new();
+    delete_item_recursive(store, &id, &mut deleted)?;
+    Ok(deleted)
+}
+
+fn delete_item_recursive(
+    store: &mut Store,
+    id: &str,
+    deleted: &mut Vec<String>,
+) -> Result<(), String> {
+    let children = get_children(store, id);
+    for child in children {
+        delete_item_recursive(store, &child, deleted)?;
+    }
     store
         .items
-        .remove(&id)
+        .remove(id)
         .ok_or_else(|| format!("item '{id}' not found"))?;
     store.deps.retain(|d| d.from_id != id && d.to_id != id);
+    deleted.push(id.to_string());
     Ok(())
 }
 
@@ -490,6 +507,17 @@ mod tests {
         add_blocking_dep(&mut store, &ids[0], &ids[1]).unwrap();
         assert_eq!(store.deps.len(), 1);
         delete_item(&mut store, &ids[0]).unwrap();
+        assert!(store.deps.is_empty());
+    }
+
+    #[test]
+    fn delete_item_cascades_to_children() {
+        let (mut store, ids) = make_store(&["parent", "child", "grandchild"]);
+        set_parent(&mut store, &ids[1], &ids[0]).unwrap();
+        set_parent(&mut store, &ids[2], &ids[1]).unwrap();
+        let deleted = delete_item(&mut store, &ids[0]).unwrap();
+        assert_eq!(deleted.len(), 3);
+        assert!(store.items.is_empty());
         assert!(store.deps.is_empty());
     }
 

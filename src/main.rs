@@ -266,9 +266,11 @@ fn run(cli: Cli) -> Result<(), String> {
         Cmd::Delete { id } => {
             let mut s = load()?;
             let resolved = store::resolve_id(&s, &id)?;
-            store::delete_item(&mut s, &resolved)?;
+            let deleted = store::delete_item(&mut s, &resolved)?;
             save(&s, &format!("Delete item {resolved}"))?;
-            println!("deleted {resolved}");
+            for did in &deleted {
+                println!("deleted {did}");
+            }
             Ok(())
         }
         Cmd::Dep { action } => match action {
