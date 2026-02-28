@@ -1,5 +1,5 @@
 Find ready work in litebrite.
 
-Run `lb ready` to show open, unblocked items sorted by priority.
+Run `lb ready` to show open, unblocked, unclaimed items sorted by priority.
 
-Present the results and offer to claim an item with `lb update <id> --status in_progress`.
+Present the results and offer to claim an item with `lb claim <id>`.
