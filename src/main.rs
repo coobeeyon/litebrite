@@ -157,10 +157,10 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("  Created: {}", item.created_at.format("%Y-%m-%d %H:%M"));
             println!("  Updated: {}", item.updated_at.format("%Y-%m-%d %H:%M"));
 
-            if let Some(pid) = store::get_parent(&s, &id) {
-                if let Some(p) = s.items.get(&pid) {
-                    println!("  Parent: {} ({})", pid, p.title);
-                }
+            if let Some(pid) = store::get_parent(&s, &id)
+                && let Some(p) = s.items.get(&pid)
+            {
+                println!("  Parent: {} ({})", pid, p.title);
             }
 
             let children = store::get_children(&s, &id);
@@ -298,10 +298,10 @@ fn run(cli: Cli) -> Result<(), String> {
                 let s = load()?;
                 let id = store::resolve_id(&s, &id)?;
 
-                if let Some(pid) = store::get_parent(&s, &id) {
-                    if let Some(p) = s.items.get(&pid) {
-                        println!("parent: {} {}", pid, p.title);
-                    }
+                if let Some(pid) = store::get_parent(&s, &id)
+                    && let Some(p) = s.items.get(&pid)
+                {
+                    println!("parent: {} {}", pid, p.title);
                 }
 
                 let children = store::get_children(&s, &id);
@@ -380,10 +380,10 @@ fn run(cli: Cli) -> Result<(), String> {
                         let remote_json =
                             git::read_store_from_ref("refs/remotes/origin/litebrite")?;
                         let remote_store = store::from_json(&remote_json)?;
-                        if let Some(remote_item) = remote_store.items.get(&id) {
-                            if let Some(ref who) = remote_item.claimed_by {
-                                return Err(format!("item {id} already claimed by {who}"));
-                            }
+                        if let Some(remote_item) = remote_store.items.get(&id)
+                            && let Some(ref who) = remote_item.claimed_by
+                        {
+                            return Err(format!("item {id} already claimed by {who}"));
                         }
 
                         // Not a claim conflict — try merge and push
@@ -785,15 +785,15 @@ fn should_show(
     if !all && status.is_none() && item.status == Status::Closed {
         return false;
     }
-    if let Some(t) = item_type {
-        if item.item_type != t {
-            return false;
-        }
+    if let Some(t) = item_type
+        && item.item_type != t
+    {
+        return false;
     }
-    if let Some(s) = status {
-        if item.status != s {
-            return false;
-        }
+    if let Some(s) = status
+        && item.status != s
+    {
+        return false;
     }
     true
 }
