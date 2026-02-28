@@ -25,11 +25,10 @@
       "title": "Fix column alignment mismatch between print_list_header and print_list_row",
       "description": "print_list_header uses {:<12} for STATUS column but print_list_row uses {:<14} because 'open (claimed)' is 14 chars. This causes column misalignment whenever claimed items appear in the output. Fix by making both use {:<14} (or abbreviate the claimed indicator to fit in 12).",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 0,
-      "claimed_by": "Mike Daum",
       "created_at": "2026-02-28T02:15:08.874967769Z",
-      "updated_at": "2026-02-28T02:23:11.124787043Z"
+      "updated_at": "2026-02-28T02:30:49.833445869Z"
     },
     "lb-830f": {
       "id": "lb-830f",
