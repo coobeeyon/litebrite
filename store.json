@@ -92,32 +92,7 @@
   },
   "deps": [
     {
-      "from_id": "lb-61mu",
-      "to_id": "lb-830f",
-      "dep_type": "parent"
-    },
-    {
-      "from_id": "lb-grsl",
-      "to_id": "lb-830f",
-      "dep_type": "parent"
-    },
-    {
-      "from_id": "lb-lktz",
-      "to_id": "lb-830f",
-      "dep_type": "parent"
-    },
-    {
-      "from_id": "lb-hhip",
-      "to_id": "lb-830f",
-      "dep_type": "parent"
-    },
-    {
-      "from_id": "lb-lztk",
-      "to_id": "lb-830f",
-      "dep_type": "parent"
-    },
-    {
-      "from_id": "lb-953v",
+      "from_id": "lb-18or",
       "to_id": "lb-830f",
       "dep_type": "parent"
     },
@@ -127,7 +102,32 @@
       "dep_type": "parent"
     },
     {
-      "from_id": "lb-18or",
+      "from_id": "lb-61mu",
+      "to_id": "lb-830f",
+      "dep_type": "parent"
+    },
+    {
+      "from_id": "lb-953v",
+      "to_id": "lb-830f",
+      "dep_type": "parent"
+    },
+    {
+      "from_id": "lb-grsl",
+      "to_id": "lb-830f",
+      "dep_type": "parent"
+    },
+    {
+      "from_id": "lb-hhip",
+      "to_id": "lb-830f",
+      "dep_type": "parent"
+    },
+    {
+      "from_id": "lb-lktz",
+      "to_id": "lb-830f",
+      "dep_type": "parent"
+    },
+    {
+      "from_id": "lb-lztk",
       "to_id": "lb-830f",
       "dep_type": "parent"
     }
