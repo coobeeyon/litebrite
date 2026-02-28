@@ -47,6 +47,10 @@ pub fn branch_exists() -> bool {
         .is_ok()
 }
 
+pub fn has_remote() -> bool {
+    run_git(&["remote", "get-url", "origin"]).is_ok()
+}
+
 pub fn remote_branch_exists() -> bool {
     run_git(&["rev-parse", "--verify", &format!("refs/remotes/origin/{BRANCH}")])
         .is_ok()
@@ -84,6 +88,11 @@ pub fn init_branch(store_json: &str) -> Result<(), String> {
         &format!("refs/heads/{BRANCH}"),
         &commit_hash,
     ])?;
+
+    // Push to remote if one is configured
+    if has_remote() {
+        push()?;
+    }
 
     Ok(())
 }

@@ -348,9 +348,7 @@ fn run(cli: Cli) -> Result<(), String> {
             Ok(())
         }
         Cmd::Claim { id } => {
-            // Fetch + fast-forward + load + check + set claimed_by + save + push
-            git::fetch().map_err(|e| format!("fetch failed: {e}"))?;
-            git::fast_forward()?;
+            let has_remote = sync_from_remote()?;
 
             let mut s = load()?;
             let id = store::resolve_id(&s, &id)?;
@@ -369,50 +367,52 @@ fn run(cli: Cli) -> Result<(), String> {
             item.updated_at = chrono::Utc::now();
             save(&s, &format!("{user} claims {id}"))?;
 
-            // Push — retry once on conflict
-            match git::push() {
-                Ok(()) => {}
-                Err(_) => {
-                    // Push rejected — fetch and check if someone else claimed it
-                    git::fetch().map_err(|e| format!("fetch failed on retry: {e}"))?;
-                    let remote_json = git::read_store_from_ref("refs/remotes/origin/litebrite")?;
-                    let remote_store = store::from_json(&remote_json)?;
-                    if let Some(remote_item) = remote_store.items.get(&id) {
-                        if let Some(ref who) = remote_item.claimed_by {
-                            return Err(format!("item {id} already claimed by {who}"));
+            if has_remote {
+                // Push — retry once on conflict
+                match git::push() {
+                    Ok(()) => {}
+                    Err(_) => {
+                        // Push rejected — fetch and check if someone else claimed it
+                        git::fetch().map_err(|e| format!("fetch failed on retry: {e}"))?;
+                        let remote_json =
+                            git::read_store_from_ref("refs/remotes/origin/litebrite")?;
+                        let remote_store = store::from_json(&remote_json)?;
+                        if let Some(remote_item) = remote_store.items.get(&id) {
+                            if let Some(ref who) = remote_item.claimed_by {
+                                return Err(format!("item {id} already claimed by {who}"));
+                            }
                         }
+
+                        // Not a claim conflict — try merge and push
+                        let base_commit = git::merge_base()?;
+                        let base_store = match base_commit {
+                            Some(ref commit) => {
+                                let json = git::read_store_from_ref(commit)?;
+                                store::from_json(&json)?
+                            }
+                            None => model::Store::default(),
+                        };
+                        let merged = store::merge_stores(&base_store, &s, &remote_store)?;
+                        let merged_json = store::to_json(&merged)?;
+
+                        let local_ref = git::local_ref()?;
+                        let remote_ref = git::remote_ref()?;
+                        git::create_merge_commit(
+                            &merged_json,
+                            &local_ref,
+                            &remote_ref,
+                            &format!("Merge: {user} claims {id}"),
+                        )?;
+                        git::push().map_err(|e| format!("push failed after merge: {e}"))?;
                     }
-
-                    // Not a claim conflict — try merge and push
-                    let base_commit = git::merge_base()?;
-                    let base_store = match base_commit {
-                        Some(ref commit) => {
-                            let json = git::read_store_from_ref(commit)?;
-                            store::from_json(&json)?
-                        }
-                        None => model::Store::default(),
-                    };
-                    let merged = store::merge_stores(&base_store, &s, &remote_store)?;
-                    let merged_json = store::to_json(&merged)?;
-
-                    let local_ref = git::local_ref()?;
-                    let remote_ref = git::remote_ref()?;
-                    git::create_merge_commit(
-                        &merged_json,
-                        &local_ref,
-                        &remote_ref,
-                        &format!("Merge: {user} claims {id}"),
-                    )?;
-                    git::push().map_err(|e| format!("push failed after merge: {e}"))?;
                 }
             }
 
-            println!("claimed {id} ({})", user);
+            println!("claimed {id} ({user})");
             Ok(())
         }
         Cmd::Unclaim { id } => {
-            git::fetch().map_err(|e| format!("fetch failed: {e}"))?;
-            git::fast_forward()?;
+            let has_remote = sync_from_remote()?;
 
             let mut s = load()?;
             let id = store::resolve_id(&s, &id)?;
@@ -426,17 +426,20 @@ fn run(cli: Cli) -> Result<(), String> {
             item.claimed_by = None;
             item.updated_at = chrono::Utc::now();
             save(&s, &format!("Unclaim {id}"))?;
-            git::push().map_err(|e| format!("push failed: {e}"))?;
+
+            if has_remote {
+                git::push().map_err(|e| format!("push failed: {e}"))?;
+            }
 
             println!("unclaimed {id}");
             Ok(())
         }
         Cmd::Sync => {
-            if git::fetch().is_err() {
-                return Err("fetch failed — is a remote configured?".to_string());
+            if !git::has_remote() {
+                return Err("no remote configured — nothing to sync".to_string());
             }
 
-            if !git::remote_branch_exists() {
+            if git::fetch().is_err() || !git::remote_branch_exists() {
                 // Remote doesn't have the branch yet — just push
                 git::push().map_err(|e| format!("push failed: {e}"))?;
                 println!("pushed litebrite branch to remote");
@@ -495,6 +498,25 @@ fn run(cli: Cli) -> Result<(), String> {
         Cmd::Setup { action } => match action {
             SetupCmd::Claude => setup_claude(),
         },
+    }
+}
+
+/// Check remote state and sync if possible. Returns true if remote is available.
+/// - No remote configured: returns Ok(false) (local-only operation)
+/// - Remote exists, branch on remote: fetches + fast-forwards, returns Ok(true)
+/// - Remote exists, no branch on remote: returns Err with instructions
+fn sync_from_remote() -> Result<bool, String> {
+    if !git::has_remote() {
+        return Ok(false);
+    }
+    match git::fetch() {
+        Ok(()) => {
+            git::fast_forward()?;
+            Ok(true)
+        }
+        Err(_) => Err(
+            "litebrite branch not found on remote — run `lb sync` to push it first".to_string(),
+        ),
     }
 }
 
@@ -1147,6 +1169,199 @@ mod tests {
         assert!(!out.status.success(), "second init should fail");
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(stderr.contains("already initialized"), "{stderr}");
+    }
+
+    // --- claim/unclaim without remote ---
+
+    #[test]
+    fn cli_claim_no_remote() {
+        let tmp = setup_git_dir();
+        lb_cmd(tmp.path()).arg("init").output().unwrap();
+
+        let out = lb_cmd(tmp.path())
+            .args(["create", "claimable"])
+            .output()
+            .unwrap();
+        let id = String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .strip_prefix("created ")
+            .unwrap()
+            .to_string();
+
+        let out = lb_cmd(tmp.path())
+            .args(["claim", &id])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "claim without remote should succeed: {}", String::from_utf8_lossy(&out.stderr));
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("claimed"), "{stdout}");
+
+        // Show should reflect the claim
+        let out = lb_cmd(tmp.path())
+            .args(["show", &id])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("Claimed by:"), "{stdout}");
+    }
+
+    #[test]
+    fn cli_unclaim_no_remote() {
+        let tmp = setup_git_dir();
+        lb_cmd(tmp.path()).arg("init").output().unwrap();
+
+        let out = lb_cmd(tmp.path())
+            .args(["create", "claimable"])
+            .output()
+            .unwrap();
+        let id = String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .strip_prefix("created ")
+            .unwrap()
+            .to_string();
+
+        lb_cmd(tmp.path()).args(["claim", &id]).output().unwrap();
+
+        let out = lb_cmd(tmp.path())
+            .args(["unclaim", &id])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "unclaim without remote should succeed: {}", String::from_utf8_lossy(&out.stderr));
+
+        // Show should no longer have a claim
+        let out = lb_cmd(tmp.path())
+            .args(["show", &id])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(!stdout.contains("Claimed by:"), "{stdout}");
+    }
+
+    // --- sync without remote ---
+
+    #[test]
+    fn cli_sync_no_remote() {
+        let tmp = setup_git_dir();
+        lb_cmd(tmp.path()).arg("init").output().unwrap();
+
+        let out = lb_cmd(tmp.path()).arg("sync").output().unwrap();
+        assert!(!out.status.success(), "sync without remote should fail");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("no remote configured"), "{stderr}");
+    }
+
+    // --- with bare remote ---
+
+    /// Set up a local repo with a bare remote for network tests.
+    fn setup_git_dir_with_remote() -> (tempfile::TempDir, tempfile::TempDir) {
+        let bare = tempfile::TempDir::new().unwrap();
+        Command::new("git")
+            .args(["init", "--bare"])
+            .current_dir(bare.path())
+            .output()
+            .unwrap();
+
+        let work = setup_git_dir();
+        Command::new("git")
+            .args(["remote", "add", "origin", bare.path().to_str().unwrap()])
+            .current_dir(work.path())
+            .output()
+            .unwrap();
+
+        (work, bare)
+    }
+
+    #[test]
+    fn cli_init_pushes_to_remote() {
+        let (work, bare) = setup_git_dir_with_remote();
+
+        let out = lb_cmd(work.path()).arg("init").output().unwrap();
+        assert!(out.status.success(), "init failed: {}", String::from_utf8_lossy(&out.stderr));
+
+        // Verify branch exists on remote
+        let out = Command::new("git")
+            .args(["branch", "--list", "litebrite"])
+            .current_dir(bare.path())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("litebrite"), "init should push to remote: {stdout}");
+    }
+
+    #[test]
+    fn cli_sync_pushes_new_branch() {
+        let (work, _bare) = setup_git_dir_with_remote();
+
+        // Init without remote push (simulate old init by creating branch directly)
+        Command::new("git")
+            .args(["hash-object", "-w", "--stdin"])
+            .stdin(std::process::Stdio::piped())
+            .current_dir(work.path())
+            .output()
+            .unwrap();
+
+        // Use lb init, but since init now pushes, we need to verify sync works
+        // when already pushed
+        lb_cmd(work.path()).arg("init").output().unwrap();
+        lb_cmd(work.path())
+            .args(["create", "sync test"])
+            .output()
+            .unwrap();
+
+        let out = lb_cmd(work.path()).arg("sync").output().unwrap();
+        assert!(out.status.success(), "sync failed: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    #[test]
+    fn cli_claim_with_remote() {
+        let (work, _bare) = setup_git_dir_with_remote();
+        lb_cmd(work.path()).arg("init").output().unwrap();
+
+        let out = lb_cmd(work.path())
+            .args(["create", "remote claimable"])
+            .output()
+            .unwrap();
+        let id = String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .strip_prefix("created ")
+            .unwrap()
+            .to_string();
+
+        // Sync so the branch is on the remote
+        lb_cmd(work.path()).arg("sync").output().unwrap();
+
+        let out = lb_cmd(work.path())
+            .args(["claim", &id])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "claim with remote failed: {}", String::from_utf8_lossy(&out.stderr));
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("claimed"), "{stdout}");
+    }
+
+    #[test]
+    fn cli_unclaim_with_remote() {
+        let (work, _bare) = setup_git_dir_with_remote();
+        lb_cmd(work.path()).arg("init").output().unwrap();
+
+        let out = lb_cmd(work.path())
+            .args(["create", "remote claimable"])
+            .output()
+            .unwrap();
+        let id = String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .strip_prefix("created ")
+            .unwrap()
+            .to_string();
+
+        lb_cmd(work.path()).arg("sync").output().unwrap();
+        lb_cmd(work.path()).args(["claim", &id]).output().unwrap();
+
+        let out = lb_cmd(work.path())
+            .args(["unclaim", &id])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "unclaim with remote failed: {}", String::from_utf8_lossy(&out.stderr));
     }
 
     // --- git show verifies storage ---
