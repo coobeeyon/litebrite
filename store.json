@@ -43,13 +43,12 @@
     "lb-953v": {
       "id": "lb-953v",
       "title": "Add mechanism to clear description in update command",
-      "description": "The update command can set a description with -d/--description but cannot clear it back to None. Passing --description '' sets Some(\"\") not None. Add a --no-description flag or treat empty string as a clear signal.",
       "item_type": "task",
       "status": "open",
       "priority": 2,
       "claimed_by": "Mike Daum",
       "created_at": "2026-02-28T02:15:08.918457159Z",
-      "updated_at": "2026-02-28T13:44:29.898423616Z"
+      "updated_at": "2026-02-28T13:45:00.537813526Z"
     },
     "lb-grsl": {
       "id": "lb-grsl",
