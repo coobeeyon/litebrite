@@ -29,6 +29,16 @@
       "priority": 1,
       "created_at": "2026-02-28T02:15:08.881466091Z",
       "updated_at": "2026-02-28T02:15:08.881466091Z"
+    },
+    "lb-lktz": {
+      "id": "lb-lktz",
+      "title": "Add cycle detection for blocking dependencies",
+      "description": "add_blocking_dep (store.rs:127) checks for self-blocks but not transitive cycles. Creating A blocks B, B blocks C, C blocks A is allowed and causes all three to be permanently blocked by ready_items. Add reachability check before inserting a new blocking dep to prevent cycles.",
+      "item_type": "task",
+      "status": "open",
+      "priority": 1,
+      "created_at": "2026-02-28T02:15:08.887909342Z",
+      "updated_at": "2026-02-28T02:15:08.887909342Z"
     }
   },
   "deps": [
@@ -39,6 +49,11 @@
     },
     {
       "from_id": "lb-grsl",
+      "to_id": "lb-830f",
+      "dep_type": "parent"
+    },
+    {
+      "from_id": "lb-lktz",
       "to_id": "lb-830f",
       "dep_type": "parent"
     }
