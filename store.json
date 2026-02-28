@@ -17,8 +17,9 @@
       "item_type": "task",
       "status": "open",
       "priority": 2,
+      "claimed_by": "Mike Daum",
       "created_at": "2026-02-28T02:15:08.932817831Z",
-      "updated_at": "2026-02-28T02:15:08.932817831Z"
+      "updated_at": "2026-02-28T13:43:40.629120039Z"
     },
     "lb-61mu": {
       "id": "lb-61mu",
