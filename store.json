@@ -1,5 +1,15 @@
 {
   "items": {
+    "lb-4ttg": {
+      "id": "lb-4ttg",
+      "title": "Add push retry logic to unclaim command",
+      "description": "The claim command (main.rs:372-407) has retry-on-push-conflict logic (fetch, check for claim conflict, merge, re-push), but unclaim (main.rs:429) just fails on push error. Add similar retry/merge logic for unclaim so it handles concurrent modifications gracefully.",
+      "item_type": "task",
+      "status": "open",
+      "priority": 2,
+      "created_at": "2026-02-28T02:15:08.932817831Z",
+      "updated_at": "2026-02-28T02:15:08.932817831Z"
+    },
     "lb-61mu": {
       "id": "lb-61mu",
       "title": "Fix column alignment mismatch between print_list_header and print_list_row",
@@ -99,6 +109,11 @@
     },
     {
       "from_id": "lb-953v",
+      "to_id": "lb-830f",
+      "dep_type": "parent"
+    },
+    {
+      "from_id": "lb-4ttg",
       "to_id": "lb-830f",
       "dep_type": "parent"
     }
