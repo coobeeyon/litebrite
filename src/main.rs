@@ -201,9 +201,6 @@ fn run(cli: Cli) -> Result<(), String> {
             if tree {
                 let roots = store::root_items(&s);
                 for root in &roots {
-                    if !should_show(root, all, item_type, status) {
-                        continue;
-                    }
                     print_tree_item(&s, &root.id, 0, all, item_type, status);
                 }
             } else {
@@ -783,19 +780,21 @@ fn print_tree_item(
     status: Option<Status>,
 ) {
     if let Some(item) = store.items.get(id) {
-        let claimed = if item.claimed_by.is_some() { " *claimed*" } else { "" };
-        let indent = "  ".repeat(depth);
-        println!(
-            "{}{} [{}] P{} {} ({}){claimed}",
-            indent, item.id, item.status, item.priority, item.title, item.item_type
-        );
+        let visible = should_show(item, all, item_type, status);
+        let child_depth = if visible {
+            let claimed = if item.claimed_by.is_some() { " *claimed*" } else { "" };
+            let indent = "  ".repeat(depth);
+            println!(
+                "{}{} [{}] P{} {} ({}){claimed}",
+                indent, item.id, item.status, item.priority, item.title, item.item_type
+            );
+            depth + 1
+        } else {
+            depth
+        };
         let children = store::get_children(store, id);
         for cid in &children {
-            if let Some(child) = store.items.get(cid) {
-                if should_show(child, all, item_type, status) {
-                    print_tree_item(store, cid, depth + 1, all, item_type, status);
-                }
-            }
+            print_tree_item(store, cid, child_depth, all, item_type, status);
         }
     }
 }
