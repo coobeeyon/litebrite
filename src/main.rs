@@ -627,7 +627,10 @@ fn print_prime_context() {
 - `lb claim <id>` — claim item (fetch + push)
 - `lb unclaim <id>` — release claim (fetch + push)
 - `lb sync` — sync with remote (fetch + merge + push)
-- IDs: `lb-XXXX`, use any unique prefix"#
+- IDs: `lb-XXXX`, use any unique prefix
+
+## Examples
+- `lb create \"Add login page\" -t task -p 1 --parent lb-a1b2 -d \"OAuth flow\"`"#
     );
 }
 
