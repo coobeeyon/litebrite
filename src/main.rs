@@ -44,6 +44,9 @@ enum Cmd {
         /// Display as tree
         #[arg(long)]
         tree: bool,
+        /// Show only children of this parent item
+        #[arg(long)]
+        parent: Option<String>,
     },
     /// Update an item
     Update {
@@ -200,9 +203,24 @@ fn run(cli: Cli) -> Result<(), String> {
             item_type,
             status,
             tree,
+            parent,
         } => {
             let s = load()?;
-            if tree {
+            if let Some(pid) = parent {
+                let pid = store::resolve_id(&s, &pid)?;
+                let child_ids = store::get_children(&s, &pid);
+                print_list_header();
+                let mut children: Vec<&model::Item> = child_ids
+                    .iter()
+                    .filter_map(|id| s.items.get(id))
+                    .collect();
+                children.sort_by_key(|i| (i.priority, i.id.clone()));
+                for item in children {
+                    if should_show(item, all, item_type, status) {
+                        print_list_row(item);
+                    }
+                }
+            } else if tree {
                 let roots = store::root_items(&s);
                 for root in &roots {
                     print_tree_item(&s, &root.id, 0, all, item_type, status);
@@ -617,7 +635,7 @@ fn print_prime_context() {
 ## CLI Quick Reference
 - `lb create <title>` — new item (-t epic/feature/task, -p <pri>, --parent <id>, -d <desc>)
 - `lb show <id>` — item details with deps and children
-- `lb list` — all open items (--all, -t <type>, -s <status>, --tree)
+- `lb list` — all open items (--all, -t <type>, -s <status>, --tree, --parent <id>)
 - `lb update <id>` — update fields (--title, --status, -t, -p, -d, --parent)
 - `lb close <id>` — close item (clears claim)
 - `lb delete <id>` — delete item and deps
