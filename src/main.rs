@@ -210,10 +210,8 @@ fn run(cli: Cli) -> Result<(), String> {
                 let pid = store::resolve_id(&s, &pid)?;
                 let child_ids = store::get_children(&s, &pid);
                 print_list_header();
-                let mut children: Vec<&model::Item> = child_ids
-                    .iter()
-                    .filter_map(|id| s.items.get(id))
-                    .collect();
+                let mut children: Vec<&model::Item> =
+                    child_ids.iter().filter_map(|id| s.items.get(id)).collect();
                 children.sort_by_key(|i| (i.priority, i.id.clone()));
                 for item in children {
                     if should_show(item, all, item_type, status) {
