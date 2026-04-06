@@ -720,8 +720,15 @@ fn setup_claude_in(base: &std::path::Path) -> Result<(), String> {
         settings["hooks"] = hooks;
     }
 
-    let settings_json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    std::fs::write(&settings_path, settings_json).map_err(|e| e.to_string())?;
+    let settings_json =
+        serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())? + "\n";
+    let existing = std::fs::read_to_string(&settings_path).unwrap_or_default();
+    if settings_json == existing {
+        println!("claude settings already up to date");
+        return Ok(());
+    }
+
+    std::fs::write(&settings_path, &settings_json).map_err(|e| e.to_string())?;
     println!("wrote .claude/settings.local.json (hooks + permissions)");
 
     Ok(())
@@ -1090,9 +1097,26 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let claude_dir = tmp.path().join(".claude");
         std::fs::create_dir_all(&claude_dir).unwrap();
+        let existing = serde_json::json!({
+            "model": "sonnet",
+            "permissions": {
+                "allow": ["Bash(git:*)", "Read"],
+                "deny": ["Bash(rm:*)"]
+            },
+            "hooks": {
+                "SessionStart": [{
+                    "matcher": "*",
+                    "hooks": [{"type": "command", "command": "echo hello"}]
+                }],
+                "PostToolUse": [{
+                    "matcher": "Bash",
+                    "hooks": [{"type": "command", "command": "echo used bash"}]
+                }]
+            }
+        });
         std::fs::write(
             claude_dir.join("settings.local.json"),
-            r#"{"permissions":{"allow":["Bash(git:*)"]}}"#,
+            serde_json::to_string_pretty(&existing).unwrap(),
         )
         .unwrap();
 
@@ -1106,25 +1130,59 @@ mod tests {
             &std::fs::read_to_string(claude_dir.join("settings.local.json")).unwrap(),
         )
         .unwrap();
+
+        // Existing permissions preserved and lb permission added
         let allow = settings["permissions"]["allow"].as_array().unwrap();
-        // Should have both the existing and new permissions
-        assert!(allow.contains(&serde_json::Value::String("Bash(git:*)".to_string())));
-        assert!(allow.contains(&serde_json::Value::String("Bash(lb:*)".to_string())));
+        assert!(allow.contains(&serde_json::json!("Bash(git:*)")));
+        assert!(allow.contains(&serde_json::json!("Read")));
+        assert!(allow.contains(&serde_json::json!("Bash(lb:*)")));
+        // Deny list untouched
+        let deny = settings["permissions"]["deny"].as_array().unwrap();
+        assert!(deny.contains(&serde_json::json!("Bash(rm:*)")));
+
+        // Existing SessionStart hook preserved, lb prime appended
+        let session = settings["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(session.len(), 2, "expected existing + lb prime: {session:?}");
+        assert!(session.iter().any(|g| {
+            g["hooks"][0]["command"].as_str() == Some("echo hello")
+        }));
+        assert!(session.iter().any(|g| {
+            g["hooks"][0]["command"].as_str() == Some("lb prime")
+        }));
+
+        // Unrelated hook event untouched
+        assert!(settings["hooks"]["PostToolUse"].is_array());
+        assert_eq!(settings["hooks"]["PostToolUse"].as_array().unwrap().len(), 1);
+
+        // PreCompact added even though it didn't exist before
+        assert!(settings["hooks"]["PreCompact"].is_array());
+
+        // Top-level keys preserved
+        assert_eq!(settings["model"], "sonnet");
     }
 
     #[test]
     fn cli_setup_claude_idempotent() {
         let tmp = tempfile::TempDir::new().unwrap();
 
-        // Run twice
-        lb_cmd(tmp.path())
+        // First run writes
+        let out1 = lb_cmd(tmp.path())
             .args(["setup", "claude"])
             .output()
             .unwrap();
-        lb_cmd(tmp.path())
+        let stdout1 = String::from_utf8_lossy(&out1.stdout);
+        assert!(stdout1.contains("wrote"), "first run should write: {stdout1}");
+
+        // Second run detects no changes
+        let out2 = lb_cmd(tmp.path())
             .args(["setup", "claude"])
             .output()
             .unwrap();
+        let stdout2 = String::from_utf8_lossy(&out2.stdout);
+        assert!(
+            stdout2.contains("already up to date"),
+            "second run should skip write: {stdout2}"
+        );
 
         let settings: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(tmp.path().join(".claude/settings.local.json")).unwrap(),
