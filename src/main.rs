@@ -720,8 +720,7 @@ fn setup_claude_in(base: &std::path::Path) -> Result<(), String> {
         settings["hooks"] = hooks;
     }
 
-    let settings_json =
-        serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())? + "\n";
+    let settings_json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())? + "\n";
     let existing = std::fs::read_to_string(&settings_path).unwrap_or_default();
     if settings_json == existing {
         println!("claude settings already up to date");
@@ -1142,17 +1141,28 @@ mod tests {
 
         // Existing SessionStart hook preserved, lb prime appended
         let session = settings["hooks"]["SessionStart"].as_array().unwrap();
-        assert_eq!(session.len(), 2, "expected existing + lb prime: {session:?}");
-        assert!(session.iter().any(|g| {
-            g["hooks"][0]["command"].as_str() == Some("echo hello")
-        }));
-        assert!(session.iter().any(|g| {
-            g["hooks"][0]["command"].as_str() == Some("lb prime")
-        }));
+        assert_eq!(
+            session.len(),
+            2,
+            "expected existing + lb prime: {session:?}"
+        );
+        assert!(
+            session
+                .iter()
+                .any(|g| { g["hooks"][0]["command"].as_str() == Some("echo hello") })
+        );
+        assert!(
+            session
+                .iter()
+                .any(|g| { g["hooks"][0]["command"].as_str() == Some("lb prime") })
+        );
 
         // Unrelated hook event untouched
         assert!(settings["hooks"]["PostToolUse"].is_array());
-        assert_eq!(settings["hooks"]["PostToolUse"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            settings["hooks"]["PostToolUse"].as_array().unwrap().len(),
+            1
+        );
 
         // PreCompact added even though it didn't exist before
         assert!(settings["hooks"]["PreCompact"].is_array());
@@ -1171,7 +1181,10 @@ mod tests {
             .output()
             .unwrap();
         let stdout1 = String::from_utf8_lossy(&out1.stdout);
-        assert!(stdout1.contains("wrote"), "first run should write: {stdout1}");
+        assert!(
+            stdout1.contains("wrote"),
+            "first run should write: {stdout1}"
+        );
 
         // Second run detects no changes
         let out2 = lb_cmd(tmp.path())
