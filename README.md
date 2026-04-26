@@ -43,8 +43,9 @@ lb sync                              # sync local changes with remote
 | `lb claim <id>` | **Yes** | Claim an item (fetch + set claimed_by + push; first push wins) |
 | `lb unclaim <id>` | **Yes** | Release a claim (fetch + clear claimed_by + push) |
 | `lb sync` | **Yes** | Sync with remote (fetch + three-way merge + push) |
-| `lb prime` | No | Output AI-optimized context for Claude Code hooks |
+| `lb prime` | No | Output AI-optimized context for AI coding agents |
 | `lb setup claude` | No | Set up Claude Code integration (hooks + permissions) |
+| `lb setup codex` | No | Set up Codex integration (hooks + permissions) |
 
 Local-only commands are fast — no network. Use `lb sync` to share changes. `lb claim`/`lb unclaim` always sync because atomicity matters.
 
@@ -78,7 +79,7 @@ All data lives in `store.json` on an orphan `litebrite` git branch — nothing i
 
 `lb init` in a clone of an existing litebrite repo detects the remote branch and sets up tracking automatically.
 
-## Claude Code Integration
+## AI Coding Agent Integration
 
 Litebrite integrates with [Claude Code](https://claude.com/claude-code) via hooks. Run:
 
@@ -90,12 +91,25 @@ This writes `.claude/settings.local.json` with:
 - SessionStart and PreCompact hooks that run `lb prime`
 - `Bash(lb:*)` permission so Claude can run `lb` commands
 
-The `lb prime` command outputs AI-optimized context (claimed items, ready items, session protocol, CLI reference). It runs automatically at session start and before context compaction, giving Claude persistent awareness of your tracker state. The CLI reference in the prime output is sufficient for Claude to operate all `lb` commands — no slash commands needed.
+Litebrite also integrates with Codex via hooks and execpolicy rules. Run:
+
+```
+lb setup codex
+```
+
+This writes:
+- `.codex/config.toml` with `codex_hooks = true`
+- `.codex/hooks.json` with a SessionStart hook that runs `lb prime`
+- `.codex/rules/default.rules` with an `lb` command permission
+
+The `lb prime` command outputs AI-optimized context (claimed items, ready items, session protocol, CLI reference). For Claude Code, it runs automatically at session start and before context compaction. For Codex, it runs automatically through the generated SessionStart hook on startup, resume, and clear. The CLI reference in the prime output is sufficient for AI coding agents to operate all `lb` commands — no slash commands needed.
 
 ### Notes
 
 - `lb setup claude` is idempotent — safe to run repeatedly
+- `lb setup codex` is idempotent — safe to run repeatedly
 - It merges into existing `.claude/settings.local.json` without clobbering other config
+- It merges into existing Codex config, hooks, and `.codex/rules/default.rules` without clobbering other content
 - `lb prime` exits silently in non-git or non-litebrite directories, so global hooks are safe
 - `.claude/settings.local.json` is typically gitignored (per-machine); each developer runs `lb setup claude` after cloning
 

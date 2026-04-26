@@ -81,7 +81,7 @@ enum Cmd {
     Unclaim { id: String },
     /// Sync local changes with remote (fetch + merge + push)
     Sync,
-    /// Output AI-optimized context for Claude Code hooks
+    /// Output AI-optimized context for AI coding agents
     Prime,
     /// Set up integrations
     Setup {
@@ -111,6 +111,8 @@ enum DepCmd {
 enum SetupCmd {
     /// Set up Claude Code integration (hooks + permissions)
     Claude,
+    /// Set up Codex integration (hooks + permissions)
+    Codex,
 }
 
 fn main() {
@@ -543,6 +545,7 @@ fn run(cli: Cli) -> Result<(), String> {
         }
         Cmd::Setup { action } => match action {
             SetupCmd::Claude => setup_claude(),
+            SetupCmd::Codex => setup_codex(),
         },
         Cmd::Completions { shell } => {
             generate(shell, &mut Cli::command(), "lb", &mut std::io::stdout());
@@ -652,6 +655,155 @@ fn print_prime_context() {
 
 fn setup_claude() -> Result<(), String> {
     setup_claude_in(std::path::Path::new("."))
+}
+
+const CODEX_LB_RULE: &str = r#"prefix_rule(pattern=["lb"], decision="allow")"#;
+
+fn setup_codex() -> Result<(), String> {
+    setup_codex_in(std::path::Path::new("."))
+}
+
+fn setup_codex_in(base: &std::path::Path) -> Result<(), String> {
+    let codex_dir = base.join(".codex");
+    std::fs::create_dir_all(&codex_dir).map_err(|e| format!("create dirs: {e}"))?;
+
+    let config_path = codex_dir.join("config.toml");
+    let existing_config = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let config = ensure_codex_hooks_feature(&existing_config);
+
+    let hooks_path = codex_dir.join("hooks.json");
+    let existing_hooks = std::fs::read_to_string(&hooks_path).unwrap_or_default();
+    let hooks = merge_codex_hooks_json(&existing_hooks)?;
+
+    let rules_dir = codex_dir.join("rules");
+    std::fs::create_dir_all(&rules_dir).map_err(|e| format!("create dirs: {e}"))?;
+    let rules_path = rules_dir.join("default.rules");
+    let existing_rules = std::fs::read_to_string(&rules_path).unwrap_or_default();
+    let rules = ensure_line(&existing_rules, CODEX_LB_RULE);
+
+    let mut wrote = Vec::new();
+    if config != existing_config {
+        std::fs::write(&config_path, &config).map_err(|e| e.to_string())?;
+        wrote.push(".codex/config.toml");
+    }
+    if hooks != existing_hooks {
+        std::fs::write(&hooks_path, &hooks).map_err(|e| e.to_string())?;
+        wrote.push(".codex/hooks.json");
+    }
+    if rules != existing_rules {
+        std::fs::write(&rules_path, &rules).map_err(|e| e.to_string())?;
+        wrote.push(".codex/rules/default.rules");
+    }
+
+    if wrote.is_empty() {
+        println!("codex setup already up to date");
+    } else {
+        println!("wrote {} (hooks + permissions)", wrote.join(" and "));
+    }
+
+    Ok(())
+}
+
+fn merge_codex_hooks_json(existing: &str) -> Result<String, String> {
+    let mut settings: serde_json::Value = if existing.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(existing).map_err(|e| format!("parse hooks: {e}"))?
+    };
+
+    let group = || {
+        serde_json::json!({
+            "matcher": "startup|resume|clear",
+            "hooks": [{
+                "type": "command",
+                "command": "lb prime",
+                "statusMessage": "Loading Litebrite tracker context"
+            }]
+        })
+    };
+
+    if let Some(hooks) = settings.get_mut("hooks") {
+        if let Some(session_start) = hooks.get_mut("SessionStart").and_then(|v| v.as_array_mut()) {
+            let has_lb_prime = session_start.iter().any(|g| {
+                g.get("hooks")
+                    .and_then(|h| h.as_array())
+                    .is_some_and(|hooks| {
+                        hooks
+                            .iter()
+                            .any(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime"))
+                    })
+            });
+            if !has_lb_prime {
+                session_start.push(group());
+            }
+        } else {
+            hooks["SessionStart"] = serde_json::json!([group()]);
+        }
+    } else {
+        settings["hooks"] = serde_json::json!({
+            "SessionStart": [group()]
+        });
+    }
+
+    serde_json::to_string_pretty(&settings)
+        .map(|s| s + "\n")
+        .map_err(|e| e.to_string())
+}
+
+fn ensure_codex_hooks_feature(existing: &str) -> String {
+    let mut lines: Vec<String> = existing.lines().map(str::to_string).collect();
+
+    let features_start = lines.iter().position(|line| line.trim() == "[features]");
+
+    if let Some(start) = features_start {
+        let end = lines
+            .iter()
+            .enumerate()
+            .skip(start + 1)
+            .find_map(|(idx, line)| {
+                let trimmed = line.trim();
+                (trimmed.starts_with('[') && trimmed.ends_with(']')).then_some(idx)
+            })
+            .unwrap_or(lines.len());
+
+        if let Some(idx) = lines[start + 1..end].iter().position(|line| {
+            line.split_once('=')
+                .is_some_and(|(key, _)| key.trim() == "codex_hooks")
+        }) {
+            lines[start + 1 + idx] = "codex_hooks = true".to_string();
+        } else {
+            lines.insert(start + 1, "codex_hooks = true".to_string());
+        }
+    } else {
+        if !lines.is_empty() && lines.last().is_some_and(|line| !line.trim().is_empty()) {
+            lines.push(String::new());
+        }
+        lines.push("[features]".to_string());
+        lines.push("codex_hooks = true".to_string());
+    }
+
+    ensure_trailing_newline(lines.join("\n"))
+}
+
+fn ensure_line(existing: &str, line: &str) -> String {
+    if existing
+        .lines()
+        .any(|existing_line| existing_line.trim() == line)
+    {
+        return ensure_trailing_newline(existing.to_string());
+    }
+
+    let mut out = ensure_trailing_newline(existing.to_string());
+    out.push_str(line);
+    out.push('\n');
+    out
+}
+
+fn ensure_trailing_newline(mut s: String) -> String {
+    if !s.is_empty() && !s.ends_with('\n') {
+        s.push('\n');
+    }
+    s
 }
 
 fn setup_claude_in(base: &std::path::Path) -> Result<(), String> {
@@ -1210,6 +1362,202 @@ mod tests {
         assert_eq!(lb_count, 1, "permission duplicated: {allow:?}");
 
         let session_hooks = settings["hooks"]["SessionStart"].as_array().unwrap();
+        let prime_count = session_hooks
+            .iter()
+            .filter(|g| {
+                g.get("hooks")
+                    .and_then(|h| h.as_array())
+                    .map_or(false, |hooks| {
+                        hooks
+                            .iter()
+                            .any(|h| h.get("command").and_then(|c| c.as_str()) == Some("lb prime"))
+                    })
+            })
+            .count();
+        assert_eq!(prime_count, 1, "hook duplicated: {session_hooks:?}");
+    }
+
+    // --- setup codex ---
+
+    #[test]
+    fn cli_setup_codex_writes_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let out = lb_cmd(tmp.path())
+            .args(["setup", "codex"])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "setup codex failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("config.toml"), "{stdout}");
+        assert!(stdout.contains("hooks.json"), "{stdout}");
+        assert!(stdout.contains("default.rules"), "{stdout}");
+        assert!(
+            !tmp.path().join("AGENTS.md").exists(),
+            "setup codex should not create AGENTS.md"
+        );
+
+        let rules = std::fs::read_to_string(tmp.path().join(".codex/rules/default.rules")).unwrap();
+        assert!(rules.contains(CODEX_LB_RULE), "{rules}");
+
+        let config = std::fs::read_to_string(tmp.path().join(".codex/config.toml")).unwrap();
+        assert!(config.contains("[features]"), "{config}");
+        assert!(config.contains("codex_hooks = true"), "{config}");
+
+        let hooks: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(tmp.path().join(".codex/hooks.json")).unwrap(),
+        )
+        .unwrap();
+        let session = hooks["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(session.len(), 1, "{session:?}");
+        assert_eq!(session[0]["matcher"], "startup|resume|clear");
+        assert_eq!(session[0]["hooks"][0]["command"], "lb prime");
+    }
+
+    #[test]
+    fn cli_setup_codex_merges_existing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("AGENTS.md"),
+            "# Project Notes\n\nKeep this existing guidance.\n",
+        )
+        .unwrap();
+        let rules_dir = tmp.path().join(".codex/rules");
+        std::fs::create_dir_all(&rules_dir).unwrap();
+        std::fs::write(
+            rules_dir.join("default.rules"),
+            r#"prefix_rule(pattern=["git"], decision="allow")
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join(".codex/config.toml"),
+            r#"model = "gpt-5.4"
+
+[features]
+browser_use = true
+codex_hooks = false
+
+[sandbox_workspace_write]
+network_access = false
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join(".codex/hooks.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "hooks": {
+                    "SessionStart": [{
+                        "matcher": "startup",
+                        "hooks": [{"type": "command", "command": "echo hello"}]
+                    }],
+                    "Stop": [{
+                        "hooks": [{"type": "command", "command": "echo done"}]
+                    }]
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let out = lb_cmd(tmp.path())
+            .args(["setup", "codex"])
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+
+        let agents = std::fs::read_to_string(tmp.path().join("AGENTS.md")).unwrap();
+        assert_eq!(
+            agents, "# Project Notes\n\nKeep this existing guidance.\n",
+            "setup codex should leave existing AGENTS.md untouched"
+        );
+
+        let rules = std::fs::read_to_string(rules_dir.join("default.rules")).unwrap();
+        assert!(
+            rules.contains(r#"prefix_rule(pattern=["git"], decision="allow")"#),
+            "{rules}"
+        );
+        assert!(rules.contains(CODEX_LB_RULE), "{rules}");
+
+        let config = std::fs::read_to_string(tmp.path().join(".codex/config.toml")).unwrap();
+        assert!(config.contains(r#"model = "gpt-5.4""#), "{config}");
+        assert!(config.contains("browser_use = true"), "{config}");
+        assert!(config.contains("codex_hooks = true"), "{config}");
+        assert!(
+            !config.contains("codex_hooks = false"),
+            "codex_hooks should be enabled: {config}"
+        );
+        assert!(
+            config.contains("[sandbox_workspace_write]"),
+            "other config tables should be preserved: {config}"
+        );
+
+        let hooks: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(tmp.path().join(".codex/hooks.json")).unwrap(),
+        )
+        .unwrap();
+        let session = hooks["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(
+            session.len(),
+            2,
+            "expected existing + lb prime: {session:?}"
+        );
+        assert!(
+            session
+                .iter()
+                .any(|g| { g["hooks"][0]["command"].as_str() == Some("echo hello") })
+        );
+        assert!(
+            session
+                .iter()
+                .any(|g| { g["hooks"][0]["command"].as_str() == Some("lb prime") })
+        );
+        assert!(hooks["hooks"]["Stop"].is_array(), "{hooks}");
+    }
+
+    #[test]
+    fn cli_setup_codex_idempotent() {
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        let out1 = lb_cmd(tmp.path())
+            .args(["setup", "codex"])
+            .output()
+            .unwrap();
+        let stdout1 = String::from_utf8_lossy(&out1.stdout);
+        assert!(
+            stdout1.contains("wrote"),
+            "first run should write: {stdout1}"
+        );
+
+        let out2 = lb_cmd(tmp.path())
+            .args(["setup", "codex"])
+            .output()
+            .unwrap();
+        let stdout2 = String::from_utf8_lossy(&out2.stdout);
+        assert!(
+            stdout2.contains("already up to date"),
+            "second run should skip write: {stdout2}"
+        );
+
+        assert!(
+            !tmp.path().join("AGENTS.md").exists(),
+            "setup codex should not create AGENTS.md"
+        );
+
+        let rules = std::fs::read_to_string(tmp.path().join(".codex/rules/default.rules")).unwrap();
+        assert_eq!(rules.matches(CODEX_LB_RULE).count(), 1, "{rules}");
+
+        let config = std::fs::read_to_string(tmp.path().join(".codex/config.toml")).unwrap();
+        assert_eq!(config.matches("codex_hooks = true").count(), 1, "{config}");
+
+        let hooks: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(tmp.path().join(".codex/hooks.json")).unwrap(),
+        )
+        .unwrap();
+        let session_hooks = hooks["hooks"]["SessionStart"].as_array().unwrap();
         let prime_count = session_hooks
             .iter()
             .filter(|g| {
