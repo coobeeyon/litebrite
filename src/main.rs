@@ -557,7 +557,7 @@ fn run(cli: Cli) -> Result<(), String> {
 /// Check remote state and sync if possible. Returns true if remote is available.
 /// - No remote configured: returns Ok(false) (local-only operation)
 /// - Remote exists, branch on remote: fetches + fast-forwards, returns Ok(true)
-/// - Remote exists, no branch on remote: returns Err with instructions
+/// - Remote exists, no branch on remote: returns Ok(true) so callers can push it
 fn sync_from_remote() -> Result<bool, String> {
     if !git::has_remote() {
         return Ok(false);
@@ -567,8 +567,12 @@ fn sync_from_remote() -> Result<bool, String> {
             git::fast_forward()?;
             Ok(true)
         }
-        Err(_) => {
-            Err("litebrite branch not found on remote — run `lb sync` to push it first".to_string())
+        Err(e) => {
+            if e.contains("couldn't find remote ref") || e.contains("could not find remote ref") {
+                Ok(true)
+            } else {
+                Err(format!("fetch failed: {e}"))
+            }
         }
     }
 }
@@ -1799,6 +1803,46 @@ network_access = false
         );
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("claimed"), "{stdout}");
+    }
+
+    #[test]
+    fn cli_claim_pushes_missing_remote_branch() {
+        let (work, bare) = setup_git_dir_with_remote();
+        lb_cmd(work.path()).arg("init").output().unwrap();
+
+        Command::new("git")
+            .args(["branch", "-D", "litebrite"])
+            .current_dir(bare.path())
+            .output()
+            .unwrap();
+
+        let out = lb_cmd(work.path())
+            .args(["create", "remote branch missing claimable"])
+            .output()
+            .unwrap();
+        let id = String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .strip_prefix("created ")
+            .unwrap()
+            .to_string();
+
+        let out = lb_cmd(work.path()).args(["claim", &id]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "claim should push missing remote branch: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        let out = Command::new("git")
+            .args(["branch", "--list", "litebrite"])
+            .current_dir(bare.path())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains("litebrite"),
+            "claim should create remote branch: {stdout}"
+        );
     }
 
     #[test]
