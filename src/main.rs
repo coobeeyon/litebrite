@@ -1093,6 +1093,14 @@ mod tests {
         cmd
     }
 
+    fn lb_setup_codex_cmd(dir: &std::path::Path, codex_home: &std::path::Path) -> Command {
+        let mut cmd = lb_cmd(dir);
+        cmd.args(["setup", "codex"])
+            .env("CODEX_HOME", codex_home)
+            .env_remove("HOME");
+        cmd
+    }
+
     /// Set up a temp dir with a git repo for CLI tests.
     fn setup_git_dir() -> tempfile::TempDir {
         let tmp = tempfile::TempDir::new().unwrap();
@@ -1444,8 +1452,8 @@ mod tests {
     #[test]
     fn cli_setup_codex_writes_files() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let out = lb_cmd(tmp.path())
-            .args(["setup", "codex"])
+        let codex_home = tmp.path().join("codex-home");
+        let out = lb_setup_codex_cmd(tmp.path(), &codex_home)
             .output()
             .unwrap();
         assert!(
@@ -1477,11 +1485,16 @@ mod tests {
         assert_eq!(session.len(), 1, "{session:?}");
         assert_eq!(session[0]["matcher"], "startup|resume|clear");
         assert_eq!(session[0]["hooks"][0]["command"], "lb prime");
+
+        let skill_dir = codex_home.join("skills/brite-architect");
+        assert!(skill_dir.join("SKILL.md").exists());
+        assert!(skill_dir.join("agents/openai.yaml").exists());
     }
 
     #[test]
     fn cli_setup_codex_merges_existing() {
         let tmp = tempfile::TempDir::new().unwrap();
+        let codex_home = tmp.path().join("codex-home");
         std::fs::write(
             tmp.path().join("AGENTS.md"),
             "# Project Notes\n\nKeep this existing guidance.\n",
@@ -1525,8 +1538,7 @@ network_access = false
         )
         .unwrap();
 
-        let out = lb_cmd(tmp.path())
-            .args(["setup", "codex"])
+        let out = lb_setup_codex_cmd(tmp.path(), &codex_home)
             .output()
             .unwrap();
         assert!(out.status.success());
@@ -1583,9 +1595,9 @@ network_access = false
     #[test]
     fn cli_setup_codex_idempotent() {
         let tmp = tempfile::TempDir::new().unwrap();
+        let codex_home = tmp.path().join("codex-home");
 
-        let out1 = lb_cmd(tmp.path())
-            .args(["setup", "codex"])
+        let out1 = lb_setup_codex_cmd(tmp.path(), &codex_home)
             .output()
             .unwrap();
         let stdout1 = String::from_utf8_lossy(&out1.stdout);
@@ -1593,9 +1605,15 @@ network_access = false
             stdout1.contains("wrote"),
             "first run should write: {stdout1}"
         );
+        assert!(
+            stdout1.contains("installed brite-architect skill"),
+            "first run should install skill: {stdout1}"
+        );
 
-        let out2 = lb_cmd(tmp.path())
-            .args(["setup", "codex"])
+        let skill_md = codex_home.join("skills/brite-architect/SKILL.md");
+        let installed_skill = std::fs::read_to_string(&skill_md).unwrap();
+
+        let out2 = lb_setup_codex_cmd(tmp.path(), &codex_home)
             .output()
             .unwrap();
         let stdout2 = String::from_utf8_lossy(&out2.stdout);
@@ -1603,6 +1621,11 @@ network_access = false
             stdout2.contains("already up to date"),
             "second run should skip write: {stdout2}"
         );
+        assert!(
+            stdout2.contains("brite-architect skill already installed"),
+            "second run should skip skill install: {stdout2}"
+        );
+        assert_eq!(std::fs::read_to_string(&skill_md).unwrap(), installed_skill);
 
         assert!(
             !tmp.path().join("AGENTS.md").exists(),
@@ -1633,6 +1656,70 @@ network_access = false
             })
             .count();
         assert_eq!(prime_count, 1, "hook duplicated: {session_hooks:?}");
+    }
+
+    #[test]
+    fn cli_setup_codex_preserves_existing_skill_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let codex_home = tmp.path().join("codex-home");
+        let skill_dir = codex_home.join("skills/brite-architect");
+        let agents_dir = skill_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "# Custom Skill\n").unwrap();
+        std::fs::write(agents_dir.join("openai.yaml"), "name: custom\n").unwrap();
+
+        let out = lb_setup_codex_cmd(tmp.path(), &codex_home)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "setup codex failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains("brite-architect skill already installed"),
+            "existing skill should not be reinstalled: {stdout}"
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap(),
+            "# Custom Skill\n",
+            "existing SKILL.md should be preserved"
+        );
+        assert_eq!(
+            std::fs::read_to_string(agents_dir.join("openai.yaml")).unwrap(),
+            "name: custom\n",
+            "existing agent file should be preserved"
+        );
+    }
+
+    #[test]
+    fn cli_setup_codex_uses_home_when_codex_home_unset() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+
+        let mut cmd = lb_cmd(tmp.path());
+        let out = cmd
+            .args(["setup", "codex"])
+            .env_remove("CODEX_HOME")
+            .env("HOME", &home)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "setup codex failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        let skill_dir = home.join(".codex/skills/brite-architect");
+        assert!(skill_dir.join("SKILL.md").exists());
+        assert!(skill_dir.join("agents/openai.yaml").exists());
+        assert!(
+            !tmp.path().join(".codex/skills/brite-architect").exists(),
+            "default Codex home should come from HOME, not the repo directory"
+        );
     }
 
     // --- close clears claim ---
