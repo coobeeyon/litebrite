@@ -1,4 +1,7 @@
 # Log
+## [2026-05-12] reviewed | codex brite skill setup
+Reviewed the `lb-kjes` branch behavior: `lb setup codex` now installs the bundled `brite-architect` skill into Codex home only when absent, while preserving existing skill directories on rerun.
+
 ## [2026-05-12] documented | codex and trapperkeeper agent setup
 Recorded that the repo intentionally checks in Codex hooks for both `lb prime` and `trk prime`, plus the Trapperkeeper orphan-branch worktree setup files.
 
