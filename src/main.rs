@@ -662,6 +662,10 @@ fn setup_claude() -> Result<(), String> {
 }
 
 const CODEX_LB_RULE: &str = r#"prefix_rule(pattern=["lb"], decision="allow")"#;
+const BRITE_ARCHITECT_SKILL_MD: &str =
+    include_str!("../assets/codex/skills/brite-architect/SKILL.md");
+const BRITE_ARCHITECT_OPENAI_AGENT: &str =
+    include_str!("../assets/codex/skills/brite-architect/agents/openai.yaml");
 
 fn setup_codex() -> Result<(), String> {
     setup_codex_in(std::path::Path::new("."))
@@ -705,7 +709,48 @@ fn setup_codex_in(base: &std::path::Path) -> Result<(), String> {
         println!("wrote {} (hooks + permissions)", wrote.join(" and "));
     }
 
+    match install_brite_architect_skill()? {
+        SkillInstallStatus::Installed => {
+            println!("installed brite-architect skill");
+        }
+        SkillInstallStatus::AlreadyPresent => {
+            println!("brite-architect skill already installed");
+        }
+    }
+
     Ok(())
+}
+
+enum SkillInstallStatus {
+    Installed,
+    AlreadyPresent,
+}
+
+fn install_brite_architect_skill() -> Result<SkillInstallStatus, String> {
+    let skill_dir = codex_home()?.join("skills").join("brite-architect");
+    if skill_dir.exists() {
+        return Ok(SkillInstallStatus::AlreadyPresent);
+    }
+
+    let agents_dir = skill_dir.join("agents");
+    std::fs::create_dir_all(&agents_dir).map_err(|e| format!("create skill dirs: {e}"))?;
+    std::fs::write(skill_dir.join("SKILL.md"), BRITE_ARCHITECT_SKILL_MD)
+        .map_err(|e| format!("write brite-architect SKILL.md: {e}"))?;
+    std::fs::write(agents_dir.join("openai.yaml"), BRITE_ARCHITECT_OPENAI_AGENT)
+        .map_err(|e| format!("write brite-architect openai.yaml: {e}"))?;
+
+    Ok(SkillInstallStatus::Installed)
+}
+
+fn codex_home() -> Result<std::path::PathBuf, String> {
+    if let Some(home) = std::env::var_os("CODEX_HOME")
+        && !home.is_empty()
+    {
+        return Ok(std::path::PathBuf::from(home));
+    }
+
+    let home = std::env::var_os("HOME").ok_or("CODEX_HOME is unset and HOME is unavailable")?;
+    Ok(std::path::PathBuf::from(home).join(".codex"))
 }
 
 fn merge_codex_hooks_json(existing: &str) -> Result<String, String> {
@@ -1204,11 +1249,11 @@ mod tests {
             stdout.contains("ownership starts after this succeeds"),
             "{stdout}"
         );
+        assert!(stdout.contains("commit code before closing"), "{stdout}");
         assert!(
-            stdout.contains("commit code before closing"),
+            stdout.contains("mark complete and clear the claim"),
             "{stdout}"
         );
-        assert!(stdout.contains("mark complete and clear the claim"), "{stdout}");
         assert!(stdout.contains("## CLI Quick Reference"), "{stdout}");
     }
 
