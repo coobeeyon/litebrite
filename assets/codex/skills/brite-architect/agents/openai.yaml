@@ -1,0 +1,4 @@
+interface:
+  display_name: "Brite Architect"
+  short_description: "Design Litebrite work graphs"
+  default_prompt: "Use $brite-architect to decompose a project into a Litebrite epic with sequenced child tasks."
