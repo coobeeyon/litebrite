@@ -74,11 +74,10 @@
       "title": "Clarify agent guidance in lb prime",
       "description": "Goal: Tighten lb prime so agent sessions do not confuse discovery with ownership or close tasks too early. Context: print_prime_context in src/main.rs emits the AI-facing context used by Codex/Claude hooks; keep it concise because it appears in every session. Requirements: mention that lb ready is discovery only, ownership starts after lb claim succeeds, code should be committed before lb close, and close clears the claim. Acceptance: cargo test passes; lb prime output includes the new guidance in a terse form. Out of scope: adding JSON output or changing claim/sync behavior.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 1,
-      "claimed_by": "agent-runner",
       "created_at": "2026-05-12T12:21:47.134238109Z",
-      "updated_at": "2026-05-12T15:57:54.268806430Z"
+      "updated_at": "2026-05-12T15:59:48.179858004Z"
     },
     "lb-grsl": {
       "id": "lb-grsl",
