@@ -10,6 +10,16 @@
       "created_at": "2026-02-28T02:15:08.947148861Z",
       "updated_at": "2026-02-28T13:43:27.243730270Z"
     },
+    "lb-2tkk": {
+      "id": "lb-2tkk",
+      "title": "Migrate Codex hook config to hooks",
+      "description": "Replace deprecated codex_hooks usage with hooks in repo config and Trapperkeeper wiki references.",
+      "item_type": "task",
+      "status": "open",
+      "priority": 1,
+      "created_at": "2026-05-12T18:26:59.590473389Z",
+      "updated_at": "2026-05-12T18:26:59.590473389Z"
+    },
     "lb-4ttg": {
       "id": "lb-4ttg",
       "title": "Add push retry logic to unclaim command",
