@@ -144,11 +144,10 @@
       "title": "Bundle brite-architect Codex skill",
       "description": "Goal: Add a Litebrite-bundled Codex skill that teaches agents to author good brite hierarchies. Context: Skills are directories with SKILL.md and optional agents/openai.yaml; this skill should be general Litebrite work-graph authoring, not mrmouth-specific. Requirements: include trigger metadata for planning/decomposing/creating brites; explain parent-child hierarchy as decomposition, sibling blocks as sequencing, and leaf descriptions as ramp-in handoffs; include a compact leaf description template with goal/context/requirements/acceptance/out-of-scope. Acceptance: the skill files are present in a stable repo path suitable for copying by lb setup codex; content is concise and does not need extra docs. Out of scope: installer logic.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 1,
-      "claimed_by": "agent-runner",
       "created_at": "2026-05-12T15:32:56.187981639Z",
-      "updated_at": "2026-05-12T15:52:00.742891687Z"
+      "updated_at": "2026-05-12T15:56:22.487644874Z"
     }
   },
   "deps": [
