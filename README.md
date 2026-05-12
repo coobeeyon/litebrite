@@ -104,6 +104,9 @@ These write:
 - `.codex/config.toml` with `codex_hooks = true`
 - `.codex/hooks.json` with SessionStart hooks that run `lb prime` and `trk prime`
 - `.codex/rules/default.rules` with `lb` and `trk` command permissions
+- the bundled brite-authoring Codex skill, `brite-architect`, under
+  `$CODEX_HOME/skills/brite-architect` (or
+  `$HOME/.codex/skills/brite-architect` when `CODEX_HOME` is unset)
 - `.trapperkeeper.json` and `.gitattributes` for the checked-in Trapperkeeper wiki worktree setup
 
 The `lb prime` command outputs AI-optimized context (claimed items, ready items,
@@ -112,8 +115,16 @@ protocol and points agents at `.trapper_keeper/`, a gitignored worktree backed
 by the `trapperkeeper` branch. For Claude Code, `lb prime` runs automatically at
 session start and before context compaction. For Codex, `lb prime` and
 `trk prime` run automatically through the generated SessionStart hooks on
-startup, resume, and clear. The CLI reference in the prime output is sufficient
-for AI coding agents to operate all `lb` commands — no slash commands needed.
+startup, resume, and clear.
+
+On the first `lb setup codex` run, Litebrite also installs the bundled
+`brite-architect` skill if that skill directory is not already present. Re-running
+`lb setup codex` is safe for older repositories: it adds the missing skill and
+continues to merge Codex config, hooks, and rules. If
+`skills/brite-architect` already exists in Codex home, Litebrite leaves the
+existing skill files untouched and reports that the skill is already installed.
+The CLI reference in the prime output is sufficient for AI coding agents to
+operate all `lb` commands — no slash commands needed.
 
 ### Notes
 
@@ -122,6 +133,7 @@ for AI coding agents to operate all `lb` commands — no slash commands needed.
 - `trk setup codex` is idempotent — safe to run repeatedly
 - It merges into existing `.claude/settings.local.json` without clobbering other config
 - The setup commands merge into existing Codex config, hooks, and `.codex/rules/default.rules` without clobbering other content
+- `lb setup codex` does not overwrite an existing `brite-architect` skill in Codex home
 - `lb prime` exits silently in non-git or non-litebrite directories, so global hooks are safe
 - `.claude/settings.local.json` is typically gitignored (per-machine); each developer runs `lb setup claude` after cloning
 
