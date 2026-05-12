@@ -666,6 +666,59 @@ const BRITE_ARCHITECT_SKILL_MD: &str =
     include_str!("../assets/codex/skills/brite-architect/SKILL.md");
 const BRITE_ARCHITECT_OPENAI_AGENT: &str =
     include_str!("../assets/codex/skills/brite-architect/agents/openai.yaml");
+const LEGACY_BRITE_ARCHITECT_SKILL_MD: &str = r#"---
+name: brite-architect
+description: Design Litebrite work graphs and brite hierarchies for project planning. Use when Codex is asked to plan, decompose, create, restructure, or refine Litebrite epics, features, tasks, dependencies, sequencing, or leaf task descriptions.
+---
+
+# Brite Architect
+
+## Overview
+
+Create Litebrite items that let runner agents start work without re-planning. Prefer small, well-sequenced leaf tasks with enough handoff context to implement and verify one unit of work.
+
+## Graph Model
+
+- Use parent-child hierarchy for decomposition: epic -> feature -> task. A child should be a smaller part of its parent, not merely related work.
+- Use sibling blocking dependencies for sequencing. If task B should not start until task A lands, make A block B instead of hiding order in prose.
+- Keep leaves executable by one runner in one focused pass. If a leaf needs design choices, unknown research, or multiple ownership areas, split it or add a preceding planning task.
+- Put shared context on the parent only when children genuinely share it. Put implementation-specific details on the leaf that needs them.
+- Do not over-model status meetings, review ownership, or shipping decisions as runner tasks unless the project explicitly requires them.
+
+## Planning Workflow
+
+1. Identify the user-visible outcome and create or update the smallest epic that owns it.
+2. Split the epic by deliverable behavior or architectural slice, not by vague activity type.
+3. Convert each slice into leaf tasks that name concrete files, commands, or interfaces when known.
+4. Add blocking deps only for real sequencing constraints: generated artifacts, API contracts, migrations, shared foundations, or tests that require prior behavior.
+5. Check each leaf from a runner's perspective: it should say what to build, where to look, how to know it is done, and what not to expand into.
+
+## Leaf Description Template
+
+Use this compact structure for task descriptions:
+
+```text
+Goal: <one-sentence outcome>
+Context: <why this exists and the important existing code/docs>
+Requirements: <specific behavior, files, commands, or constraints>
+Acceptance: <observable done state, including tests or manual checks>
+Out of scope: <nearby work the runner should not take on>
+```
+
+Keep descriptions terse but complete. A good leaf lets an agent claim it, read the named context, implement, commit, close, and stop.
+
+## Quality Bar
+
+- Every open child should either be independently runnable or blocked by the prerequisite that makes it runnable.
+- Each dependency should explain actual order, not priority.
+- Leaf tasks should avoid phrases like "improve", "clean up", or "handle edge cases" unless they name the concrete behavior to change.
+- The graph should expose parallelism: unrelated siblings should not block each other.
+"#;
+const LEGACY_BRITE_ARCHITECT_OPENAI_AGENT: &str = r#"interface:
+  display_name: "Brite Architect"
+  short_description: "Design Litebrite work graphs"
+  default_prompt: "Use $brite-architect to decompose a project into a Litebrite epic with sequenced child tasks."
+"#;
 
 fn setup_codex() -> Result<(), String> {
     setup_codex_in(std::path::Path::new("."))
@@ -713,6 +766,9 @@ fn setup_codex_in(base: &std::path::Path) -> Result<(), String> {
         SkillInstallStatus::Installed => {
             println!("installed brite-architect skill");
         }
+        SkillInstallStatus::Updated => {
+            println!("updated brite-architect skill");
+        }
         SkillInstallStatus::AlreadyPresent => {
             println!("brite-architect skill already installed");
         }
@@ -723,15 +779,31 @@ fn setup_codex_in(base: &std::path::Path) -> Result<(), String> {
 
 enum SkillInstallStatus {
     Installed,
+    Updated,
     AlreadyPresent,
 }
 
 fn install_brite_architect_skill() -> Result<SkillInstallStatus, String> {
     let skill_dir = codex_home()?.join("skills").join("brite-architect");
     if skill_dir.exists() {
+        let skill_path = skill_dir.join("SKILL.md");
+        let agent_path = skill_dir.join("agents").join("openai.yaml");
+        let skill = std::fs::read_to_string(&skill_path).ok();
+        let agent = std::fs::read_to_string(&agent_path).ok();
+        if skill.as_deref() == Some(LEGACY_BRITE_ARCHITECT_SKILL_MD)
+            && agent.as_deref() == Some(LEGACY_BRITE_ARCHITECT_OPENAI_AGENT)
+        {
+            write_brite_architect_skill(&skill_dir)?;
+            return Ok(SkillInstallStatus::Updated);
+        }
         return Ok(SkillInstallStatus::AlreadyPresent);
     }
 
+    write_brite_architect_skill(&skill_dir)?;
+    Ok(SkillInstallStatus::Installed)
+}
+
+fn write_brite_architect_skill(skill_dir: &std::path::Path) -> Result<(), String> {
     let agents_dir = skill_dir.join("agents");
     std::fs::create_dir_all(&agents_dir).map_err(|e| format!("create skill dirs: {e}"))?;
     std::fs::write(skill_dir.join("SKILL.md"), BRITE_ARCHITECT_SKILL_MD)
@@ -739,7 +811,7 @@ fn install_brite_architect_skill() -> Result<SkillInstallStatus, String> {
     std::fs::write(agents_dir.join("openai.yaml"), BRITE_ARCHITECT_OPENAI_AGENT)
         .map_err(|e| format!("write brite-architect openai.yaml: {e}"))?;
 
-    Ok(SkillInstallStatus::Installed)
+    Ok(())
 }
 
 fn codex_home() -> Result<std::path::PathBuf, String> {
@@ -1489,6 +1561,16 @@ mod tests {
         let skill_dir = codex_home.join("skills/brite-architect");
         assert!(skill_dir.join("SKILL.md").exists());
         assert!(skill_dir.join("agents/openai.yaml").exists());
+        let skill = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
+        assert!(
+            skill.contains("Do not stop after writing a prose plan"),
+            "{skill}"
+        );
+        assert!(skill.contains("Run `lb create`"), "{skill}");
+        assert!(skill.contains("Run `lb dep add"), "{skill}");
+        let agent = std::fs::read_to_string(skill_dir.join("agents/openai.yaml")).unwrap();
+        assert!(agent.contains("Create Litebrite work graphs"), "{agent}");
+        assert!(agent.contains("create a Litebrite epic"), "{agent}");
     }
 
     #[test]
@@ -1692,6 +1774,47 @@ network_access = false
             "name: custom\n",
             "existing agent file should be preserved"
         );
+    }
+
+    #[test]
+    fn cli_setup_codex_upgrades_legacy_bundled_skill() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let codex_home = tmp.path().join("codex-home");
+        let skill_dir = codex_home.join("skills/brite-architect");
+        let agents_dir = skill_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), LEGACY_BRITE_ARCHITECT_SKILL_MD).unwrap();
+        std::fs::write(
+            agents_dir.join("openai.yaml"),
+            LEGACY_BRITE_ARCHITECT_OPENAI_AGENT,
+        )
+        .unwrap();
+
+        let out = lb_setup_codex_cmd(tmp.path(), &codex_home)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "setup codex failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains("updated brite-architect skill"),
+            "legacy bundled skill should be upgraded: {stdout}"
+        );
+
+        let skill = std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
+        assert!(
+            skill.contains("Do not stop after writing a prose plan"),
+            "{skill}"
+        );
+        assert!(skill.contains("Run `lb create`"), "{skill}");
+        assert_ne!(skill, LEGACY_BRITE_ARCHITECT_SKILL_MD);
+
+        let agent = std::fs::read_to_string(agents_dir.join("openai.yaml")).unwrap();
+        assert!(agent.contains("Create Litebrite work graphs"), "{agent}");
+        assert_ne!(agent, LEGACY_BRITE_ARCHITECT_OPENAI_AGENT);
     }
 
     #[test]

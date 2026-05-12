@@ -1,6 +1,6 @@
 ---
 name: brite-architect
-description: Design Litebrite work graphs and brite hierarchies for project planning. Use when Codex is asked to plan, decompose, create, restructure, or refine Litebrite epics, features, tasks, dependencies, sequencing, or leaf task descriptions.
+description: Create and refine Litebrite work graphs and brite hierarchies. Use when Codex is asked to plan, decompose, create, restructure, or refine Litebrite epics, features, tasks, dependencies, sequencing, or leaf task descriptions.
 ---
 
 # Brite Architect
@@ -8,6 +8,16 @@ description: Design Litebrite work graphs and brite hierarchies for project plan
 ## Overview
 
 Create Litebrite items that let runner agents start work without re-planning. Prefer small, well-sequenced leaf tasks with enough handoff context to implement and verify one unit of work.
+
+## Execution Rule
+
+Do not stop after writing a prose plan. Unless the user explicitly asks for a draft only, create or update the graph with `lb` commands.
+
+- Run `lb create` for each new epic, feature, or task. Use `-t epic`, `-t feature`, or `-t task`, set priority with `-p`, set parentage with `--parent`, and put the full handoff context in `-d`.
+- Capture each created item ID from command output before creating children or dependencies.
+- Run `lb dep add <prerequisite-id> --blocks <blocked-id>` for real sequencing constraints.
+- Run `lb show <id>` or `lb list --tree --parent <id>` after creation when needed to verify the graph.
+- Final responses should summarize the created or updated brite IDs and any sequencing, not merely present an unexecuted plan.
 
 ## Graph Model
 

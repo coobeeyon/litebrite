@@ -120,9 +120,11 @@ startup, resume, and clear.
 On the first `lb setup codex` run, Litebrite also installs the bundled
 `brite-architect` skill if that skill directory is not already present. Re-running
 `lb setup codex` is safe for older repositories: it adds the missing skill and
-continues to merge Codex config, hooks, and rules. If
-`skills/brite-architect` already exists in Codex home, Litebrite leaves the
-existing skill files untouched and reports that the skill is already installed.
+continues to merge Codex config, hooks, and rules. If Codex home contains the
+first bundled version of `brite-architect`, setup upgrades it so the skill
+creates brites with `lb create` and `lb dep add` instead of only drafting a
+plan. Other existing `skills/brite-architect` directories are treated as custom
+and left untouched.
 The CLI reference in the prime output is sufficient for AI coding agents to
 operate all `lb` commands — no slash commands needed.
 
@@ -133,7 +135,7 @@ operate all `lb` commands — no slash commands needed.
 - `trk setup codex` is idempotent — safe to run repeatedly
 - It merges into existing `.claude/settings.local.json` without clobbering other config
 - The setup commands merge into existing Codex config, hooks, and `.codex/rules/default.rules` without clobbering other content
-- `lb setup codex` does not overwrite an existing `brite-architect` skill in Codex home
+- `lb setup codex` upgrades the previous bundled `brite-architect` skill but does not overwrite custom skill files in Codex home
 - `lb prime` exits silently in non-git or non-litebrite directories, so global hooks are safe
 - `.claude/settings.local.json` is typically gitignored (per-machine); each developer runs `lb setup claude` after cloning
 
