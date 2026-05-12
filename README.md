@@ -91,25 +91,37 @@ This writes `.claude/settings.local.json` with:
 - SessionStart and PreCompact hooks that run `lb prime`
 - `Bash(lb:*)` permission so Claude can run `lb` commands
 
-Litebrite also integrates with Codex via hooks and execpolicy rules. Run:
+Litebrite also integrates with Codex via hooks and execpolicy rules. This
+repository checks in the shared Codex setup so agents get both Litebrite
+tracker context and Trapperkeeper wiki context automatically. Run:
 
 ```
 lb setup codex
+trk setup codex
 ```
 
-This writes:
+These write:
 - `.codex/config.toml` with `codex_hooks = true`
-- `.codex/hooks.json` with a SessionStart hook that runs `lb prime`
-- `.codex/rules/default.rules` with an `lb` command permission
+- `.codex/hooks.json` with SessionStart hooks that run `lb prime` and `trk prime`
+- `.codex/rules/default.rules` with `lb` and `trk` command permissions
+- `.trapperkeeper.json` and `.gitattributes` for the checked-in Trapperkeeper wiki worktree setup
 
-The `lb prime` command outputs AI-optimized context (claimed items, ready items, session protocol, CLI reference). For Claude Code, it runs automatically at session start and before context compaction. For Codex, it runs automatically through the generated SessionStart hook on startup, resume, and clear. The CLI reference in the prime output is sufficient for AI coding agents to operate all `lb` commands — no slash commands needed.
+The `lb prime` command outputs AI-optimized context (claimed items, ready items,
+session protocol, CLI reference). The `trk prime` command outputs the repo wiki
+protocol and points agents at `.trapper_keeper/`, a gitignored worktree backed
+by the `trapperkeeper` branch. For Claude Code, `lb prime` runs automatically at
+session start and before context compaction. For Codex, `lb prime` and
+`trk prime` run automatically through the generated SessionStart hooks on
+startup, resume, and clear. The CLI reference in the prime output is sufficient
+for AI coding agents to operate all `lb` commands — no slash commands needed.
 
 ### Notes
 
 - `lb setup claude` is idempotent — safe to run repeatedly
 - `lb setup codex` is idempotent — safe to run repeatedly
+- `trk setup codex` is idempotent — safe to run repeatedly
 - It merges into existing `.claude/settings.local.json` without clobbering other config
-- It merges into existing Codex config, hooks, and `.codex/rules/default.rules` without clobbering other content
+- The setup commands merge into existing Codex config, hooks, and `.codex/rules/default.rules` without clobbering other content
 - `lb prime` exits silently in non-git or non-litebrite directories, so global hooks are safe
 - `.claude/settings.local.json` is typically gitignored (per-machine); each developer runs `lb setup claude` after cloning
 
