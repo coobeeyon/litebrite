@@ -35,11 +35,10 @@
       "title": "Install bundled Codex skill from setup codex",
       "description": "Goal: Make lb setup codex install the bundled brite-architect skill automatically when it is missing. Context: setup_codex in src/main.rs already writes .codex/config.toml, hooks.json, and rules/default.rules idempotently. Requirements: resolve CODEX_HOME from env or default to ~/.codex; copy the bundled skill to the Codex skills directory only if brite-architect does not exist; never overwrite an existing skill; print whether the skill was installed or already present. Acceptance: rerunning lb setup codex on an older repo installs the missing skill; rerunning when the skill exists leaves it untouched and reports that it was already installed. Out of scope: force-update or upgrade behavior.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 1,
-      "claimed_by": "agent-runner",
       "created_at": "2026-05-12T15:34:08.171071961Z",
-      "updated_at": "2026-05-12T16:24:09.236605435Z"
+      "updated_at": "2026-05-12T16:28:08.189759524Z"
     },
     "lb-830f": {
       "id": "lb-830f",
