@@ -630,11 +630,11 @@ fn print_prime_context() {
     println!(
         r#"
 ## Session Protocol
-1. `lb ready` — find unblocked, unclaimed work
+1. `lb ready` — discover candidates only; it does not assign ownership
 2. `lb show <id>` — get full context
-3. `lb claim <id>` — claim work (syncs with remote)
-4. Do the work, commit code
-5. `lb close <id>` — mark complete (ALWAYS do this after committing)
+3. `lb claim <id>` — claim work; ownership starts after this succeeds
+4. Do the work and commit code before closing
+5. `lb close <id>` — mark complete and clear the claim
 6. `lb sync` — push changes to remote
 
 ## CLI Quick Reference
@@ -1196,6 +1196,19 @@ mod tests {
         assert!(stdout.contains("## Ready"), "{stdout}");
         assert!(stdout.contains("Ready task"), "{stdout}");
         assert!(stdout.contains("## Session Protocol"), "{stdout}");
+        assert!(
+            stdout.contains("`lb ready` — discover candidates only; it does not assign ownership"),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains("ownership starts after this succeeds"),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains("commit code before closing"),
+            "{stdout}"
+        );
+        assert!(stdout.contains("mark complete and clear the claim"), "{stdout}");
         assert!(stdout.contains("## CLI Quick Reference"), "{stdout}");
     }
 

@@ -15,6 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && git lfs install \
   && rm -rf /var/lib/apt/lists/*
 
+# Rust 2024 edition support and rustfmt for repo tests/checks.
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo
+ENV PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain stable --component rustfmt && \
+    chmod -R a+w /usr/local/rustup /usr/local/cargo
+
 # Layer 2: GitHub CLI (changes occasionally)
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
       | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
