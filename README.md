@@ -101,7 +101,7 @@ trk setup codex
 ```
 
 These write:
-- `.codex/config.toml` with `codex_hooks = true`
+- `.codex/config.toml` with `[features].hooks = true`
 - `.codex/hooks.json` with SessionStart hooks that run `lb prime` and `trk prime`
 - `.codex/rules/default.rules` with `lb` and `trk` command permissions
 - the bundled brite-authoring Codex skill, `brite-architect`, under

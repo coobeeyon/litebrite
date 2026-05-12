@@ -730,7 +730,7 @@ fn setup_codex_in(base: &std::path::Path) -> Result<(), String> {
 
     let config_path = codex_dir.join("config.toml");
     let existing_config = std::fs::read_to_string(&config_path).unwrap_or_default();
-    let config = ensure_codex_hooks_feature(&existing_config);
+    let config = ensure_codex_hooks_feature_flag(&existing_config);
 
     let hooks_path = codex_dir.join("hooks.json");
     let existing_hooks = std::fs::read_to_string(&hooks_path).unwrap_or_default();
@@ -871,7 +871,7 @@ fn merge_codex_hooks_json(existing: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-fn ensure_codex_hooks_feature(existing: &str) -> String {
+fn ensure_codex_hooks_feature_flag(existing: &str) -> String {
     let mut lines: Vec<String> = existing.lines().map(str::to_string).collect();
 
     let features_start = lines.iter().position(|line| line.trim() == "[features]");
@@ -887,20 +887,39 @@ fn ensure_codex_hooks_feature(existing: &str) -> String {
             })
             .unwrap_or(lines.len());
 
+        for idx in (start + 1..end).rev() {
+            if lines[idx]
+                .split_once('=')
+                .is_some_and(|(key, _)| key.trim() == "codex_hooks")
+            {
+                lines.remove(idx);
+            }
+        }
+
+        let end = lines
+            .iter()
+            .enumerate()
+            .skip(start + 1)
+            .find_map(|(idx, line)| {
+                let trimmed = line.trim();
+                (trimmed.starts_with('[') && trimmed.ends_with(']')).then_some(idx)
+            })
+            .unwrap_or(lines.len());
+
         if let Some(idx) = lines[start + 1..end].iter().position(|line| {
             line.split_once('=')
-                .is_some_and(|(key, _)| key.trim() == "codex_hooks")
+                .is_some_and(|(key, _)| key.trim() == "hooks")
         }) {
-            lines[start + 1 + idx] = "codex_hooks = true".to_string();
+            lines[start + 1 + idx] = "hooks = true".to_string();
         } else {
-            lines.insert(start + 1, "codex_hooks = true".to_string());
+            lines.insert(start + 1, "hooks = true".to_string());
         }
     } else {
         if !lines.is_empty() && lines.last().is_some_and(|line| !line.trim().is_empty()) {
             lines.push(String::new());
         }
         lines.push("[features]".to_string());
-        lines.push("codex_hooks = true".to_string());
+        lines.push("hooks = true".to_string());
     }
 
     ensure_trailing_newline(lines.join("\n"))
@@ -1547,7 +1566,7 @@ mod tests {
 
         let config = std::fs::read_to_string(tmp.path().join(".codex/config.toml")).unwrap();
         assert!(config.contains("[features]"), "{config}");
-        assert!(config.contains("codex_hooks = true"), "{config}");
+        assert!(config.contains("hooks = true"), "{config}");
 
         let hooks: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(tmp.path().join(".codex/hooks.json")).unwrap(),
@@ -1641,10 +1660,10 @@ network_access = false
         let config = std::fs::read_to_string(tmp.path().join(".codex/config.toml")).unwrap();
         assert!(config.contains(r#"model = "gpt-5.4""#), "{config}");
         assert!(config.contains("browser_use = true"), "{config}");
-        assert!(config.contains("codex_hooks = true"), "{config}");
+        assert!(config.contains("hooks = true"), "{config}");
         assert!(
-            !config.contains("codex_hooks = false"),
-            "codex_hooks should be enabled: {config}"
+            !config.contains("codex_hooks"),
+            "legacy codex_hooks should be removed: {config}"
         );
         assert!(
             config.contains("[sandbox_workspace_write]"),
@@ -1718,7 +1737,11 @@ network_access = false
         assert_eq!(rules.matches(CODEX_LB_RULE).count(), 1, "{rules}");
 
         let config = std::fs::read_to_string(tmp.path().join(".codex/config.toml")).unwrap();
-        assert_eq!(config.matches("codex_hooks = true").count(), 1, "{config}");
+        assert_eq!(config.matches("hooks = true").count(), 1, "{config}");
+        assert!(
+            !config.contains("codex_hooks"),
+            "legacy codex_hooks should be absent: {config}"
+        );
 
         let hooks: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(tmp.path().join(".codex/hooks.json")).unwrap(),
