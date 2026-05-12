@@ -15,11 +15,10 @@
       "title": "Migrate Codex hook config to hooks",
       "description": "Replace deprecated codex_hooks usage with hooks in repo config and Trapperkeeper wiki references.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 1,
-      "claimed_by": "Michael Daum",
       "created_at": "2026-05-12T18:26:59.590473389Z",
-      "updated_at": "2026-05-12T18:27:05.273834979Z"
+      "updated_at": "2026-05-12T18:34:16.506688408Z"
     },
     "lb-4ttg": {
       "id": "lb-4ttg",
