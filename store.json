@@ -108,6 +108,16 @@
       "priority": 2,
       "created_at": "2026-02-28T02:15:08.906267250Z",
       "updated_at": "2026-02-28T13:46:56.332836077Z"
+    },
+    "lb-yl20": {
+      "id": "lb-yl20",
+      "title": "Bundle brite-architect Codex skill",
+      "description": "Goal: Add a Litebrite-bundled Codex skill that teaches agents to author good brite hierarchies. Context: Skills are directories with SKILL.md and optional agents/openai.yaml; this skill should be general Litebrite work-graph authoring, not mrmouth-specific. Requirements: include trigger metadata for planning/decomposing/creating brites; explain parent-child hierarchy as decomposition, sibling blocks as sequencing, and leaf descriptions as ramp-in handoffs; include a compact leaf description template with goal/context/requirements/acceptance/out-of-scope. Acceptance: the skill files are present in a stable repo path suitable for copying by lb setup codex; content is concise and does not need extra docs. Out of scope: installer logic.",
+      "item_type": "task",
+      "status": "open",
+      "priority": 1,
+      "created_at": "2026-05-12T15:32:56.187981639Z",
+      "updated_at": "2026-05-12T15:32:56.187981639Z"
     }
   },
   "deps": [
@@ -153,6 +163,11 @@
     },
     {
       "from_id": "lb-cx9w",
+      "to_id": "lb-kjes",
+      "dep_type": "parent"
+    },
+    {
+      "from_id": "lb-yl20",
       "to_id": "lb-kjes",
       "dep_type": "parent"
     }
