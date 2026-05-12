@@ -225,6 +225,11 @@
       "from_id": "lb-7z3a",
       "to_id": "lb-94pu",
       "dep_type": "blocks"
+    },
+    {
+      "from_id": "lb-7z3a",
+      "to_id": "lb-xsn6",
+      "dep_type": "blocks"
     }
   ]
 }
