@@ -1,4 +1,7 @@
 # Log
+## [2026-05-12] fixed | codex hooks feature flag migration
+Recorded that Litebrite and Trapperkeeper setup now use `[features].hooks = true` and remove the deprecated `[features].codex_hooks` key when refreshing Codex config.
+
 ## [2026-05-12] fixed | brite architect execution behavior
 Recorded that the `brite-architect` skill must create or update Litebrite items with `lb` commands, and that `lb setup codex` upgrades the first bundled skill version while preserving custom skill directories.
 

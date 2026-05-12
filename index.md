@@ -4,6 +4,7 @@
 claim remote branch bootstrap - [Remote sync and claim behavior](pages/remote-sync-and-claim.md)
 Codex hooks - [Agent integration](pages/agent-integration.md)
 Codex skill install - [Agent integration](pages/agent-integration.md)
+codex_hooks deprecation - [Agent integration](pages/agent-integration.md)
 fetch missing remote ref - [Remote sync and claim behavior](pages/remote-sync-and-claim.md)
 lb prime - [Agent integration](pages/agent-integration.md)
 origin/litebrite - [Remote sync and claim behavior](pages/remote-sync-and-claim.md)
