@@ -144,11 +144,10 @@
       "title": "Fix brite-architect skill to create brites",
       "description": "Goal: Make the bundled brite-architect skill execute lb create/lb dep add instead of only writing a prose plan. Context: The first shipped skill describes planning well, but user testing showed Codex produced a nice plan without creating Litebrite items. Requirements: Update the skill prompt and installer behavior so existing installs of the previous bundled skill are upgraded while custom skill directories are preserved. Acceptance: Tests cover fresh install, legacy bundled upgrade, and custom preservation; cargo fmt, clippy, and tests pass.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 1,
-      "claimed_by": "Michael Daum",
       "created_at": "2026-05-12T18:04:01.588445395Z",
-      "updated_at": "2026-05-12T18:04:10.173767883Z"
+      "updated_at": "2026-05-12T18:08:06.845918318Z"
     },
     "lb-yl20": {
       "id": "lb-yl20",
