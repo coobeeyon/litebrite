@@ -1,4 +1,7 @@
 # Log
+## [2026-05-12] fixed | brite architect execution behavior
+Recorded that the `brite-architect` skill must create or update Litebrite items with `lb` commands, and that `lb setup codex` upgrades the first bundled skill version while preserving custom skill directories.
+
 ## [2026-05-12] reviewed | codex brite skill setup
 Reviewed the `lb-kjes` branch behavior: `lb setup codex` now installs the bundled `brite-architect` skill into Codex home only when absent, while preserving existing skill directories on rerun.
 
