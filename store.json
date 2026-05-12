@@ -134,11 +134,10 @@
       "title": "Document automatic Codex skill install",
       "description": "Goal: Document that lb setup codex installs the Litebrite brite-authoring skill automatically. Context: README already describes setup codex writing hooks, config, rules, and lb prime integration. Requirements: add the skill install behavior, destination path, non-overwrite guarantee, and rerun behavior for older repos. Acceptance: README explains what happens on first run and rerun without implying existing user skills are modified. Out of scope: long skill usage tutorial; the skill itself owns the detailed brite-authoring workflow.",
       "item_type": "task",
-      "status": "open",
+      "status": "closed",
       "priority": 2,
-      "claimed_by": "agent-runner",
       "created_at": "2026-05-12T15:32:56.247905729Z",
-      "updated_at": "2026-05-12T16:33:23.784193982Z"
+      "updated_at": "2026-05-12T16:35:55.238375117Z"
     },
     "lb-yl20": {
       "id": "lb-yl20",
